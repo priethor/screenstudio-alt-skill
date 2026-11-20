@@ -13,7 +13,7 @@
       "description": "Free, open-source, headless alternative to Screen Studio: auto-zoom, idle speed-up, keystroke chips, smoothed cursor, text callouts, 9:16 vertical \u2014 from the CLI.",
       "source": {
         "source": "github",
-        "repo": "connerkward/screenstudio-alternative-skill"
+        "repo": "priethor/screenstudio-alt-skill"
       }
     }
   ]
