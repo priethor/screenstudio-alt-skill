@@ -69,6 +69,10 @@ python3 src/render.py SRC.mp4 --regions regions.json --out out.mp4 \
 # vertical: same command with --aspect 9:16
 ```
 
+Output is 1280x720 for 16:9 (1080 wide for `1:1` and `9:16`); `--width 1920` renders
+larger, with the cursor and click ripple scaled to match. Worth it when the recording is
+1920 wide or more, so zoomed-out shots stay readable.
+
 `regions.json` = `[{"t0","t1","z","cx","cy"}]`. (`polish.py` is the older ffmpeg-filter path —
 it does the `--speedup`/idle-detection work and needs no numpy itself, but it is **not** a
 substitute for `render.py`: every Studio export and high-quality zoom/pan goes through `render.py`.)

@@ -33,7 +33,7 @@ existing dailies corpus.
 - `render.py` — **high-quality non-destructive renderer** (preferred): single-pass
   spring-physics camera over the original high-res frames, LANCZOS into a smaller
   target (crisp zoom, ~1.3× sharper than the ffmpeg upscale path), 60fps, H + 9:16 V.
-  Tunable `--freq`/`--zeta` (spring), `--fps`, `--target-w`. Takes explicit
+  Tunable `--freq`/`--zeta` (spring), `--fps`, `--width`. Takes explicit
   `--regions [{t0,t1,z,cx,cy}]` — plus optional `cx1,cy1,z1` end-keyframe per region:
   when present the camera **pans** (eases start→end across the held span, `ease_traj`).
   `polish.py` is the older ffmpeg-filter fallback.
@@ -84,7 +84,7 @@ Style flags, used in every render below:
 ```bash
 --fps 60 --cursor --cursor-scale 1.5 --click-press --cursor-idle-fade 2.5 \
   --cursor-spring 470,70,3 --bg-image "$HOME/.cache/demo-wallpaper.png" --bg-blur 40 \
-  --pad 0.025 --radius 12
+  --pad 0.025 --radius 12 --width 1920
 ```
 
 The pointer must be visible with its clicks; a recording without them gets redone.
@@ -106,7 +106,7 @@ Slow enough to follow one idea at a time.
 python3 src/render.py src.mp4 --regions regions.json --events events.jsonl --out demo.mp4 \
   --fps 60 --cursor --cursor-scale 1.5 --click-press --cursor-idle-fade 2.5 \
   --cursor-spring 470,70,3 --bg-image "$HOME/.cache/demo-wallpaper.png" --bg-blur 40 \
-  --pad 0.025 --radius 12
+  --pad 0.025 --radius 12 --width 1920
 ```
 
 ### Walkthrough (long tours of many features)
@@ -124,7 +124,7 @@ python3 src/render.py src.mp4 --regions regions.json --events events.jsonl --out
   --speed-segments '[{"t0":0,"t1":DUR,"speed":2}]' \
   --fps 60 --cursor --cursor-scale 1.5 --click-press --cursor-idle-fade 2.5 \
   --cursor-spring 470,70,3 --bg-image "$HOME/.cache/demo-wallpaper.png" --bg-blur 40 \
-  --pad 0.025 --radius 12
+  --pad 0.025 --radius 12 --width 1920
 ```
 
 ### Scripted browser demos

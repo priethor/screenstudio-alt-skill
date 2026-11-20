@@ -440,13 +440,17 @@ def render(src, regions, out_path, *, aspect="16:9", fit="cover", events=None, f
            ramp=0.5, curve="smooth", cursor=False, clickfx=False, keys=False, segs=None,
            bg="none", pad=0.06, radius=18, shadow=True, callouts=None, progress_file=None,
            metadata=True, cursor_scale=1.0, click_press=False, cursor_idle_fade=0.0,
-           cursor_spring=None, bg_image=None, bg_blur=0.0):
+           cursor_spring=None, bg_image=None, bg_blur=0.0, width=None):
     vid = polish.probe(src)
     Sw, Sh, sfps = vid["w"], vid["h"], vid["fps"]
     o2s, s2o, out_dur = time_maps(segs) if segs else (lambda t: t, lambda t: t, vid["dur"])
 
     # output geometry from aspect ratio
     Tw, Th = ASPECTS.get(aspect, ASPECTS["16:9"])
+    ui = 1.0                          # cursor/ripple size relative to the aspect's default width
+    if width:
+        ui = width / Tw
+        Tw, Th = int(width)//2*2, int(round(Th * width / Tw))//2*2
     out_aspect = Tw / Th
     src_aspect = Sw / Sh
     contain = (fit == "contain")
@@ -503,7 +507,7 @@ def render(src, regions, out_path, *, aspect="16:9", fit="cover", events=None, f
     nframes = len(zt)
 
     cur_xs = cur_ys = None; clicks = []; cur_kinds = None; cur_press = None; cur_alpha = None
-    cur_h = max(8, int(round(38 * cursor_scale)))
+    cur_h = max(8, int(round(38 * cursor_scale * ui)))
     callouts = list(callouts or [])
     if (cursor or clickfx or keys) and events:
         ev = polish.load_events(events, vid)
@@ -589,12 +593,12 @@ def render(src, regions, out_path, *, aspect="16:9", fit="cover", events=None, f
                         if -60 < rx < Cw+60 and -60 < ry < Ch+60:
                             if ov is None:
                                 ov = Image.new("RGBA", img.size, (0,0,0,0)); od = ImageDraw.Draw(ov)
-                            r = 9 + p*46; a = (1-p)
+                            r = (9 + p*46) * ui; a = (1-p)
                             bx, by = int(min(max(rx,0),Cw-1)), int(min(max(ry,0),Ch-1))
                             lum = int(arr[by, bx].mean())
                             col = (30,30,34) if lum > 128 else (255,255,255)   # contrast w/ bg
                             od.ellipse([rx-r,ry-r,rx+r,ry+r], fill=col+(int(55*a),))
-                            od.ellipse([rx-r,ry-r,rx+r,ry+r], outline=col+(int(210*a),), width=3)
+                            od.ellipse([rx-r,ry-r,rx+r,ry+r], outline=col+(int(210*a),), width=max(1, round(3*ui)))
                 if ov is not None:
                     img = Image.alpha_composite(img.convert("RGBA"),
                           ov.filter(ImageFilter.GaussianBlur(0.6))).convert("RGB")
@@ -733,6 +737,9 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("src"); ap.add_argument("--regions", required=True); ap.add_argument("--out", required=True)
     ap.add_argument("--aspect", default="16:9", choices=list(ASPECTS))
+    ap.add_argument("--width", type=int,
+                    help="output width in pixels (height follows --aspect); default 1280 for 16:9, "
+                         "1080 for 1:1 and 9:16. The cursor and click ripple scale with it")
     ap.add_argument("--fit", default="cover", choices=["cover", "contain"],
                     help="cover = crop-to-fill the output aspect (default, may cut non-16:9 "
                          "sources); contain = fit whole source inside frame + letterbox/pad")
@@ -799,5 +806,5 @@ if __name__ == "__main__":
                bg=a.bg, pad=a.pad, radius=a.radius, shadow=not a.no_shadow, callouts=callouts, progress_file=a.progress_file,
                metadata=not a.no_metadata, cursor_scale=a.cursor_scale, click_press=a.click_press,
                cursor_idle_fade=a.cursor_idle_fade, cursor_spring=spring,
-               bg_image=a.bg_image, bg_blur=a.bg_blur)
+               bg_image=a.bg_image, bg_blur=a.bg_blur, width=a.width)
     print(json.dumps(r))

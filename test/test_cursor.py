@@ -181,6 +181,18 @@ def test_render_uses_the_image_behind_the_padded_frame():
     assert im.getpixel((w - 4, h // 2))[2] > 180                                      # blue margin right
     assert min(im.getpixel((w // 2, h // 2))) > 220                                   # white content
 
+def test_render_width_sets_the_output_size():
+    import subprocess
+    tmp = tempfile.mkdtemp()
+    src = os.path.join(tmp, "src.mp4"); out = os.path.join(tmp, "out.mp4")
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "color=white:s=320x180:d=0.3:r=10",
+                    "-pix_fmt", "yuv420p", src], check=True)
+    render.render(src, [], out, fps=10, width=1920)
+    size = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
+                           "stream=width,height", "-of", "csv=p=0", out],
+                          capture_output=True, text=True, check=True).stdout.strip()
+    assert size == "1920,1080", size
+
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
 
 if __name__ == "__main__":
