@@ -96,6 +96,7 @@ def load_events(path, vid):
     getComputedStyle(); `cursor_kinds` lists (t, name) for render.py's sprite choice."""
     header, moves, clicks, click_bbox, keys, key_bbox = None, [], [], [], [], None
     kinds = []   # (t, css cursor name) from optional `cursor` on move events
+    ups = []     # (t, x, y) mouse releases, paired with `clicks` for the press animation
     with open(path) as f:
         for line in f:
             line = line.strip()
@@ -109,6 +110,8 @@ def load_events(path, vid):
             elif e.get("type") == "down":
                 clicks.append((t, e["x"], e["y"]))
                 click_bbox.append(e.get("bbox"))
+            elif e.get("type") == "up":
+                ups.append((t, e.get("x", 0), e.get("y", 0)))
             elif e.get("type") == "key":
                 keys.append((t, e["key"]))
                 if key_bbox is None and e.get("bbox"): key_bbox = e["bbox"]
@@ -121,9 +124,10 @@ def load_events(path, vid):
         return None if not b else [b[0]*sx, b[1]*sy, b[2]*sx, b[3]*sy]   # x,y,w,h in video px
     moves  = [(t, x*sx, y*sy) for t,x,y in moves]
     clicks = [(t, x*sx, y*sy) for t,x,y in clicks]
+    ups    = [(t, x*sx, y*sy) for t,x,y in ups]
     click_bbox = [scale_bbox(b) for b in click_bbox]
     return {"moves":moves, "clicks":clicks, "click_bbox":click_bbox,
-            "keys":keys, "key_bbox":scale_bbox(key_bbox), "cursor_kinds":kinds}
+            "keys":keys, "key_bbox":scale_bbox(key_bbox), "cursor_kinds":kinds, "ups":ups}
 
 # ---------------------------------------------------------------- speedup
 def detect_freezes(path, noise=0.003, min_d=1.5):
@@ -455,6 +459,21 @@ def render_chips(chips, vid, tmp):
     return out
 
 # ---------------------------------------------------------------- cursor
+def spring_follow(targets, fps, stiffness, damping, mass, substeps=4):
+    """A damped spring chasing a per-frame target: x'' = (k(target-x) - c x') / m,
+    integrated with semi-implicit Euler. Starts at rest on the first target. Values
+    follow Screen Studio's spring settings (stiffness, damping, mass), time in seconds."""
+    if not targets: return []
+    dt = 1.0 / fps / substeps
+    x, v = float(targets[0]), 0.0
+    out = []
+    for tgt in targets:
+        for _ in range(substeps):
+            v += (stiffness * (tgt - x) - damping * v) / mass * dt
+            x += v * dt
+        out.append(x)
+    return out
+
 def smooth_positions(moves, fps, dur, sigma_frames=4, rest_px=2.0):
     """Resample to frame grid, gaussian-smooth, snap micro-jitter at rest."""
     n = int(dur*fps)+1

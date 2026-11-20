@@ -55,6 +55,36 @@ def test_cursor_scale_grows_the_sprite():
     big = render.kind_sprite("pointer", 57)[0]
     assert big.height > small.height * 1.4
 
+def test_load_events_reads_mouse_ups():
+    path = _events([HEADER,
+                    {"t": 1.0, "type": "down", "x": 5, "y": 5, "button": "left"},
+                    {"t": 1.1, "type": "up", "x": 5, "y": 5, "button": "left"}])
+    ev = polish.load_events(path, VID)
+    assert ev["ups"] == [(1.1, 5.0, 5.0)], ev["ups"]
+
+def test_spring_follow_settles_on_the_target():
+    track = polish.spring_follow([0.0] + [100.0] * 119, 60, 470, 70, 3)
+    assert abs(track[-1] - 100.0) < 0.5, track[-1]
+    assert track[3] < 50.0   # eases out of rest instead of jumping
+
+def test_press_scale_dips_while_held_and_springs_back():
+    fps = 60
+    scales = render.press_scales([(1.0, 0, 0)], [(1.2, 0, 0)], fps, 3.0)
+    assert scales[int(0.9*fps)] == 1.0
+    assert min(scales[int(1.0*fps):int(1.3*fps)]) < 0.88
+    assert abs(scales[int(2.5*fps)] - 1.0) < 0.01
+
+def test_press_scale_holds_a_quick_click():
+    fps = 60
+    scales = render.press_scales([(1.0, 0, 0)], [(1.005, 0, 0)], fps, 2.0)
+    assert min(scales[int(1.0*fps):int(1.2*fps)]) < 0.92
+
+def test_scaled_sprite_keeps_the_hotspot_in_place():
+    spr, hx, hy = render.kind_sprite("pointer", 38)
+    s2, hx2, hy2 = render.scaled_sprite((spr, hx, hy), 0.8)
+    assert abs(hx2 - hx * 0.8) < 1e-6 and abs(hy2 - hy * 0.8) < 1e-6
+    assert s2.width < spr.width
+
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
 
 if __name__ == "__main__":

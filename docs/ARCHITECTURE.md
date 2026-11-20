@@ -85,6 +85,9 @@ substitute for `render.py`: every Studio export and high-quality zoom/pan goes t
   fill it from `getComputedStyle()` on the hovered element.
 - **`--cursor-scale`** (default `1.0`, 38px tall at 1280 wide) makes every sprite bigger or
   smaller; Screen Studio's own default reads closer to `1.5`.
+- **`--click-press`** shrinks the pointer while the mouse is down and springs it back on
+  release, Screen Studio's default click feedback. It pairs each `down` with the next `up`
+  and holds at least 80ms so a quick click still reads. Works with or without `--clickfx`.
 
 ## Text callouts (`--callouts`)
 

@@ -109,6 +109,28 @@ def kind_sprite(kind, h=38):
     _KIND_CACHE[key] = (spr, (pad + hot[0]*u)/ss, (pad + hot[1]*u)/ss)
     return _KIND_CACHE[key]
 
+def press_scales(downs, ups, fps, dur, depth=0.18, stiffness=700, damping=30, mass=1, min_hold=0.08):
+    """Per-source-frame cursor scale for the click press: the pointer shrinks by `depth`
+    while the button is held and springs back on release (Screen Studio's default click
+    feedback, its `mouseClickSpring`). Each down pairs with the next up; a press is held
+    for at least `min_hold` so a quick click still reads."""
+    n = int(dur*fps)+1
+    pressed = [False]*n
+    up_ts = sorted(t for t, _, _ in ups)
+    for t0 in sorted(t for t, _, _ in downs):
+        t1 = next((u for u in up_ts if u >= t0), t0 + min_hold)
+        t1 = max(t1, t0 + min_hold)
+        for i in range(max(0, int(t0*fps)), min(n, int(t1*fps)+1)): pressed[i] = True
+    targets = [1.0 - depth if p else 1.0 for p in pressed]
+    return polish.spring_follow(targets, fps, stiffness, damping, mass)
+
+def scaled_sprite(sprite, scale):
+    """Resize a (sprite, hotspot_x, hotspot_y) around its hotspot."""
+    spr, hx, hy = sprite
+    if abs(scale - 1.0) < 0.01: return sprite
+    w = max(1, int(round(spr.width * scale))); h = max(1, int(round(spr.height * scale)))
+    return spr.resize((w, h), Image.LANCZOS), hx * scale, hy * scale
+
 def cursor_kind_track(kinds, fps, dur):
     """Per-source-frame sprite family from (t, css name) samples: each frame takes the
     latest sample at or before it; frames before the first sample use the arrow."""
@@ -379,7 +401,7 @@ def _bake_metadata(out_path, moments, *, src, fps, Sw, Sh, Tw, Th, out_dur):
 def render(src, regions, out_path, *, aspect="16:9", fit="cover", events=None, fps=60,
            ramp=0.5, curve="smooth", cursor=False, clickfx=False, keys=False, segs=None,
            bg="none", pad=0.06, radius=18, shadow=True, callouts=None, progress_file=None,
-           metadata=True, cursor_scale=1.0):
+           metadata=True, cursor_scale=1.0, click_press=False):
     vid = polish.probe(src)
     Sw, Sh, sfps = vid["w"], vid["h"], vid["fps"]
     o2s, s2o, out_dur = time_maps(segs) if segs else (lambda t: t, lambda t: t, vid["dur"])
@@ -441,7 +463,7 @@ def render(src, regions, out_path, *, aspect="16:9", fit="cover", events=None, f
     cyt = ease_traj(R, "cy", Sh/2, fps, out_dur, ramp, curve)
     nframes = len(zt)
 
-    cur_xs = cur_ys = None; clicks = []; cur_kinds = None
+    cur_xs = cur_ys = None; clicks = []; cur_kinds = None; cur_press = None
     cur_h = max(8, int(round(38 * cursor_scale)))
     callouts = list(callouts or [])
     if (cursor or clickfx or keys) and events:
@@ -449,6 +471,7 @@ def render(src, regions, out_path, *, aspect="16:9", fit="cover", events=None, f
         if cursor:
             cur_xs, cur_ys = polish.smooth_positions(ev["moves"], sfps, vid["dur"])
             if ev.get("cursor_kinds"): cur_kinds = cursor_kind_track(ev["cursor_kinds"], sfps, vid["dur"])
+            if click_press: cur_press = press_scales(ev["clicks"], ev.get("ups", []), sfps, vid["dur"])
         if clickfx: clicks = [(t, x, y) for t, x, y in ev["clicks"]]
         if keys:   # keystroke caption = ONE bottom-center window per burst whose text grows
             callouts += [{"t0": s2o(g["t0"]), "t1": s2o(g["t1"]), "anchor": "bottom", "size": 0.055,
@@ -537,7 +560,9 @@ def render(src, regions, out_path, *, aspect="16:9", fit="cover", events=None, f
                 oy = (cur_ys[min(cur_src_idx, len(cur_ys)-1)] - y0) * sy + poy
                 if -50 < ox < Cw+50 and -50 < oy < Ch+50:
                     kind = cur_kinds[min(cur_src_idx, len(cur_kinds)-1)] if cur_kinds else "default"
-                    spr, hx, hy = kind_sprite(kind, cur_h)   # crisp fixed-size cursor (no balloon)
+                    sprite = kind_sprite(kind, cur_h)   # crisp fixed-size cursor (no balloon)
+                    if cur_press: sprite = scaled_sprite(sprite, cur_press[min(cur_src_idx, len(cur_press)-1)])
+                    spr, hx, hy = sprite
                     img.paste(spr, (int(round(ox-hx)), int(round(oy-hy))), spr)
             # composite: drop the Cw×Ch content onto the backdrop (rounded + shadow). The
             # content rect already carries the right aspect — NO second resize/squash here.
@@ -673,6 +698,8 @@ if __name__ == "__main__":
     ap.add_argument("--cursor", action="store_true"); ap.add_argument("--clickfx", action="store_true")
     ap.add_argument("--cursor-scale", type=float, default=1.0,
                     help="cursor size multiplier (1.0 = 38px tall at 1280 wide)")
+    ap.add_argument("--click-press", action="store_true",
+                    help="shrink the cursor while the mouse is down and spring it back on release")
     ap.add_argument("--keys", action="store_true", help="keystroke chips (auto bottom callouts; needs --events)")
     ap.add_argument("--speedup", action="store_true"); ap.add_argument("--idle-speed", type=float, default=8.0)
     ap.add_argument("--speed-segments")
@@ -704,5 +731,5 @@ if __name__ == "__main__":
     r = render(a.src, regions, a.out, aspect=a.aspect, fit=a.fit, events=a.events, fps=a.fps,
                ramp=a.ramp, curve=a.curve, cursor=a.cursor, clickfx=a.clickfx, keys=a.keys, segs=segs,
                bg=a.bg, pad=a.pad, radius=a.radius, shadow=not a.no_shadow, callouts=callouts, progress_file=a.progress_file,
-               metadata=not a.no_metadata, cursor_scale=a.cursor_scale)
+               metadata=not a.no_metadata, cursor_scale=a.cursor_scale, click_press=a.click_press)
     print(json.dumps(r))
