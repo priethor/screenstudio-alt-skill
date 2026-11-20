@@ -144,6 +144,43 @@ def test_smooth_positions_unchanged_by_the_refactor():
     xs, ys = polish.smooth_positions(_ramp_moves(), 30, 3.0)
     assert len(xs) == 91 and abs(xs[-1] - 500.0) < 1.0 and xs[0] == 0.0
 
+def _stripes(w, h):
+    """Left half red, right half blue, saved to a temp PNG."""
+    from PIL import Image
+    img = Image.new("RGB", (w, h), (255, 0, 0))
+    img.paste((0, 0, 255), (w // 2, 0, w, h))
+    f = tempfile.NamedTemporaryFile(suffix=".png", delete=False); f.close()
+    img.save(f.name)
+    return f.name
+
+def test_image_backdrop_covers_the_canvas():
+    bd = render.image_backdrop(_stripes(400, 400), 1280, 720)   # square into 16:9
+    assert bd.size == (1280, 720)
+    assert bd.getpixel((10, 360))[0] > 200 and bd.getpixel((1270, 360))[2] > 200
+
+def test_image_backdrop_blur_softens_edges():
+    sharp = render.image_backdrop(_stripes(1280, 720), 1280, 720)
+    soft = render.image_backdrop(_stripes(1280, 720), 1280, 720, blur=40)
+    mid = (640, 360)
+    assert sharp.getpixel((636, 360))[2] < 10            # hard edge without blur
+    assert 40 < soft.getpixel(mid)[0] < 215 and 40 < soft.getpixel(mid)[2] < 215
+
+def test_render_uses_the_image_behind_the_padded_frame():
+    import subprocess
+    tmp = tempfile.mkdtemp()
+    src = os.path.join(tmp, "src.mp4"); out = os.path.join(tmp, "out.mp4")
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "color=white:s=320x180:d=0.5:r=10",
+                    "-pix_fmt", "yuv420p", src], check=True)
+    render.render(src, [], out, fps=10, bg_image=_stripes(320, 180), pad=0.1, radius=0, shadow=False)
+    frame = os.path.join(tmp, "f.png")
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", out, "-frames:v", "1", frame], check=True)
+    from PIL import Image
+    im = Image.open(frame).convert("RGB")
+    w, h = im.size
+    assert im.getpixel((3, h // 2))[0] > 180 and im.getpixel((3, h // 2))[2] < 80    # red margin left
+    assert im.getpixel((w - 4, h // 2))[2] > 180                                      # blue margin right
+    assert min(im.getpixel((w // 2, h // 2))) > 220                                   # white content
+
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
 
 if __name__ == "__main__":

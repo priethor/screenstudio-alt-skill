@@ -73,6 +73,20 @@ python3 src/render.py SRC.mp4 --regions regions.json --out out.mp4 \
 it does the `--speedup`/idle-detection work and needs no numpy itself, but it is **not** a
 substitute for `render.py`: every Studio export and high-quality zoom/pan goes through `render.py`.)
 
+## Backdrop (`--bg`, `--bg-image`)
+
+With a backdrop, the content shrinks into a card inset by `--pad` (fraction of each side,
+default `0.06`), with `--radius` corners and a drop shadow (`--no-shadow` drops it).
+
+- **`--bg`** picks a gradient preset (`dark`, `light`, `dusk`, `ocean`, `warm`, `mint`,
+  `slate`) or `blur`, the frame itself scaled up, blurred and darkened.
+- **`--bg-image PATH`** puts a still image behind the card instead, such as a desktop
+  wallpaper, scaled to cover the frame. **`--bg-blur`** blurs it (radius in pixels at 1280
+  wide; `0`, the default, keeps it sharp). Screen Studio's blurred wallpaper with a thin
+  margin is roughly `--bg-image wallpaper.png --bg-blur 40 --pad 0.025 --radius 12`. Pillow
+  can't open HEIC, so convert macOS wallpapers first:
+  `sips -s format png "/System/Library/Desktop Pictures/.thumbnails/Ventura Graphic.heic" --out wallpaper.png`.
+
 ## Cursor (`--cursor`)
 
 `--cursor` draws a synthetic, smoothed pointer from the event log. Options on top of it:
@@ -179,6 +193,9 @@ and idle spans, plus a ground-truth `events.jsonl` — every feature is validate
 python3 test/make-fixture.py test/fixture.mp4 test/fixture.events.jsonl
 python3 src/polish.py test/fixture.mp4 --events test/fixture.events.jsonl --speedup --zoom --keys --vertical
 ```
+
+The cursor and backdrop options in `render.py` have their own checks, with no extra
+dependencies: `python3 test/test_cursor.py`.
 
 ## Recording the demo — deterministic frame-stepping
 

@@ -224,6 +224,19 @@ def make_backdrop(spec, Tw, Th):
     g = np.zeros((Th, Tw, 3), np.float32)
     for ch in range(3): g[:,:,ch] = np.linspace(c0[ch], c1[ch], Th)[:,None]
     return Image.fromarray(g.astype(np.uint8))
+def image_backdrop(path, Tw, Th, blur=0.0):
+    """A still image (e.g. a desktop wallpaper) scaled to cover the Tw x Th canvas,
+    center-cropped, and optionally Gaussian-blurred. `blur` is a radius in pixels at
+    1280 wide and scales with the output, like the other styling sizes."""
+    img = Image.open(path).convert("RGB")
+    s = max(Tw / img.width, Th / img.height)
+    rw, rh = max(Tw, round(img.width * s)), max(Th, round(img.height * s))
+    img = img.resize((rw, rh), Image.LANCZOS)
+    bx, by = (rw - Tw) // 2, (rh - Th) // 2
+    img = img.crop((bx, by, bx + Tw, by + Th))
+    if blur > 0:
+        img = img.filter(ImageFilter.GaussianBlur(blur * Tw / 1280))
+    return img
 def rounded_mask(w, h, rad):
     m = Image.new("L", (w, h), 0); ImageDraw.Draw(m).rounded_rectangle([0,0,w-1,h-1], rad, fill=255)
     return m
@@ -427,7 +440,7 @@ def render(src, regions, out_path, *, aspect="16:9", fit="cover", events=None, f
            ramp=0.5, curve="smooth", cursor=False, clickfx=False, keys=False, segs=None,
            bg="none", pad=0.06, radius=18, shadow=True, callouts=None, progress_file=None,
            metadata=True, cursor_scale=1.0, click_press=False, cursor_idle_fade=0.0,
-           cursor_spring=None):
+           cursor_spring=None, bg_image=None, bg_blur=0.0):
     vid = polish.probe(src)
     Sw, Sh, sfps = vid["w"], vid["h"], vid["fps"]
     o2s, s2o, out_dur = time_maps(segs) if segs else (lambda t: t, lambda t: t, vid["dur"])
@@ -441,8 +454,8 @@ def render(src, regions, out_path, *, aspect="16:9", fit="cover", events=None, f
     # frame styling: backdrop active when bg is a real value. blur is dynamic (the
     # backdrop is this frame's own source, blurred) so its static gradient/shadow are
     # built per-frame; flat gradients precompute their (gradient + shadow) once.
-    use_bg   = bool(bg) and bg != "none"
-    use_blur = (bg == "blur")
+    use_bg   = bool(bg_image) or (bool(bg) and bg != "none")
+    use_blur = not bg_image and bg == "blur"
     # CONTENT RECT — the single rectangle the source pixels land in. Without a backdrop
     # it's the whole output frame; with one it's the padded inset (cwf×chf at fox,foy).
     # Both `cover` and `contain` fit the crop into THIS rect (one fit, one resize) so the
@@ -465,7 +478,7 @@ def render(src, regions, out_path, *, aspect="16:9", fit="cover", events=None, f
     # precompute the static (gradient) backdrop + shadow once; blur builds its own per-frame.
     frame_bg = None
     if use_bg and not use_blur:
-        bd = make_backdrop(bg, Tw, Th)
+        bd = image_backdrop(bg_image, Tw, Th, bg_blur) if bg_image else make_backdrop(bg, Tw, Th)
         if shadow:
             sh = Image.new("RGBA",(Tw,Th),(0,0,0,0)); soff = int(12*Tw/1280)
             ImageDraw.Draw(sh).rounded_rectangle([fox,foy+soff,fox+cwf,foy+chf+soff], frad, fill=(0,0,0,135))
@@ -744,6 +757,11 @@ if __name__ == "__main__":
                     help="backdrop behind the padded/rounded content: 'none', a gradient "
                          "(dark/light/dusk/ocean/warm/mint/slate), or 'blur' (the source "
                          "frame itself, scaled to cover + Gaussian-blurred + darkened)")
+    ap.add_argument("--bg-image", metavar="PATH",
+                    help="use an image as the backdrop (e.g. a desktop wallpaper), scaled to cover "
+                         "the frame; replaces --bg")
+    ap.add_argument("--bg-blur", type=float, default=0.0,
+                    help="Gaussian blur radius for --bg-image, in pixels at 1280 wide (0 = sharp)")
     ap.add_argument("--pad", type=float, default=0.06)
     ap.add_argument("--radius", type=float, default=18); ap.add_argument("--no-shadow", action="store_true")
     ap.add_argument("--callouts", help="JSON [{t0,t1,text,anchor,size}] of screen-fixed text labels (OUTPUT time); anchor e.g. top-left/top/bottom-right/center")
@@ -765,6 +783,10 @@ if __name__ == "__main__":
     if a.trim_in or a.trim_out:                       # restrict the time-remap to the trimmed source window
         _dur = polish.probe(a.src)["dur"]
         segs = clip_segs_to_trim(segs, _dur, a.trim_in, a.trim_out)
+    if a.bg_image and a.bg != "none":
+        ap.error("--bg-image replaces --bg; pass one of them")
+    if a.bg_image and not os.path.isfile(a.bg_image):
+        ap.error(f"--bg-image: no such file: {a.bg_image}")
     spring = None
     if a.cursor_spring:
         try:
@@ -776,5 +798,6 @@ if __name__ == "__main__":
                ramp=a.ramp, curve=a.curve, cursor=a.cursor, clickfx=a.clickfx, keys=a.keys, segs=segs,
                bg=a.bg, pad=a.pad, radius=a.radius, shadow=not a.no_shadow, callouts=callouts, progress_file=a.progress_file,
                metadata=not a.no_metadata, cursor_scale=a.cursor_scale, click_press=a.click_press,
-               cursor_idle_fade=a.cursor_idle_fade, cursor_spring=spring)
+               cursor_idle_fade=a.cursor_idle_fade, cursor_spring=spring,
+               bg_image=a.bg_image, bg_blur=a.bg_blur)
     print(json.dumps(r))
