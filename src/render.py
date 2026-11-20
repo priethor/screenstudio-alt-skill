@@ -426,7 +426,8 @@ def _bake_metadata(out_path, moments, *, src, fps, Sw, Sh, Tw, Th, out_dur):
 def render(src, regions, out_path, *, aspect="16:9", fit="cover", events=None, fps=60,
            ramp=0.5, curve="smooth", cursor=False, clickfx=False, keys=False, segs=None,
            bg="none", pad=0.06, radius=18, shadow=True, callouts=None, progress_file=None,
-           metadata=True, cursor_scale=1.0, click_press=False, cursor_idle_fade=0.0):
+           metadata=True, cursor_scale=1.0, click_press=False, cursor_idle_fade=0.0,
+           cursor_spring=None):
     vid = polish.probe(src)
     Sw, Sh, sfps = vid["w"], vid["h"], vid["fps"]
     o2s, s2o, out_dur = time_maps(segs) if segs else (lambda t: t, lambda t: t, vid["dur"])
@@ -494,7 +495,10 @@ def render(src, regions, out_path, *, aspect="16:9", fit="cover", events=None, f
     if (cursor or clickfx or keys) and events:
         ev = polish.load_events(events, vid)
         if cursor:
-            cur_xs, cur_ys = polish.smooth_positions(ev["moves"], sfps, vid["dur"])
+            if cursor_spring:
+                cur_xs, cur_ys = polish.spring_positions(ev["moves"], sfps, vid["dur"], *cursor_spring)
+            else:
+                cur_xs, cur_ys = polish.smooth_positions(ev["moves"], sfps, vid["dur"])
             if ev.get("cursor_kinds"): cur_kinds = cursor_kind_track(ev["cursor_kinds"], sfps, vid["dur"])
             if click_press: cur_press = press_scales(ev["clicks"], ev.get("ups", []), sfps, vid["dur"])
             if cursor_idle_fade > 0: cur_alpha = idle_alphas(cur_xs, cur_ys, ev["clicks"], sfps, cursor_idle_fade)
@@ -730,6 +734,9 @@ if __name__ == "__main__":
                     help="shrink the cursor while the mouse is down and spring it back on release")
     ap.add_argument("--cursor-idle-fade", type=float, default=0.0,
                     help="fade the cursor out after this many seconds without moving (0 = always visible)")
+    ap.add_argument("--cursor-spring", metavar="K,C,M",
+                    help="move the cursor with a damped spring (stiffness,damping,mass), e.g. 470,70,3; "
+                         "default is the Gaussian smoothing")
     ap.add_argument("--keys", action="store_true", help="keystroke chips (auto bottom callouts; needs --events)")
     ap.add_argument("--speedup", action="store_true"); ap.add_argument("--idle-speed", type=float, default=8.0)
     ap.add_argument("--speed-segments")
@@ -758,9 +765,16 @@ if __name__ == "__main__":
     if a.trim_in or a.trim_out:                       # restrict the time-remap to the trimmed source window
         _dur = polish.probe(a.src)["dur"]
         segs = clip_segs_to_trim(segs, _dur, a.trim_in, a.trim_out)
+    spring = None
+    if a.cursor_spring:
+        try:
+            spring = tuple(float(v) for v in a.cursor_spring.split(","))
+            assert len(spring) == 3 and all(v > 0 for v in spring)
+        except (ValueError, AssertionError):
+            ap.error("--cursor-spring takes three positive numbers: stiffness,damping,mass")
     r = render(a.src, regions, a.out, aspect=a.aspect, fit=a.fit, events=a.events, fps=a.fps,
                ramp=a.ramp, curve=a.curve, cursor=a.cursor, clickfx=a.clickfx, keys=a.keys, segs=segs,
                bg=a.bg, pad=a.pad, radius=a.radius, shadow=not a.no_shadow, callouts=callouts, progress_file=a.progress_file,
                metadata=not a.no_metadata, cursor_scale=a.cursor_scale, click_press=a.click_press,
-               cursor_idle_fade=a.cursor_idle_fade)
+               cursor_idle_fade=a.cursor_idle_fade, cursor_spring=spring)
     print(json.dumps(r))

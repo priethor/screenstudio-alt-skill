@@ -115,6 +115,35 @@ def test_faded_sprite_hides_at_zero():
     assert render.faded_sprite(sprite, 0.0) is None
     assert render.faded_sprite(sprite, 1.0) is sprite
 
+def _ramp_moves():
+    """Rest at x=0, travel to x=500 between 1.0s and 1.5s, then rest (30Hz samples)."""
+    moves = []
+    for i in range(int(3.0 * 30)):
+        t = i / 30
+        x = 0.0 if t < 1.0 else (500.0 if t >= 1.5 else (t - 1.0) / 0.5 * 500.0)
+        moves.append((t, x, 0.0))
+    return moves
+
+def test_spring_positions_land_on_time_for_the_click():
+    fps = 60
+    xs, _ = polish.spring_positions(_ramp_moves(), fps, 3.0, 470, 70, 3)
+    assert abs(xs[int(1.5 * fps)] - 500.0) < 40, xs[int(1.5 * fps)]   # arrives with the click
+    assert max(xs) < 520, max(xs)                                       # settles, no big overshoot
+    assert abs(xs[-1] - 500.0) < 1.0
+
+def test_spring_positions_ease_instead_of_jumping():
+    fps = 60
+    xs, _ = polish.spring_positions(_ramp_moves(), fps, 3.0, 470, 70, 3)
+    steps = [abs(xs[i+1] - xs[i]) for i in range(len(xs)-1)]
+    raw, _ = polish.frame_positions(_ramp_moves(), fps, 3.0)
+    raw_steps = [abs(raw[i+1] - raw[i]) for i in range(len(raw)-1)]
+    assert max(steps) < max(raw_steps) * 1.2   # no faster than the path itself, roughly
+    assert steps[int(0.95 * fps)] > 0          # starts easing before the path moves (lead)
+
+def test_smooth_positions_unchanged_by_the_refactor():
+    xs, ys = polish.smooth_positions(_ramp_moves(), 30, 3.0)
+    assert len(xs) == 91 and abs(xs[-1] - 500.0) < 1.0 and xs[0] == 0.0
+
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
 
 if __name__ == "__main__":

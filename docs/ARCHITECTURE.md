@@ -93,6 +93,11 @@ substitute for `render.py`: every Studio export and high-quality zoom/pan goes t
   the default, keeps it on screen. Useful for pauses where the content should breathe,
   such as a page loading. `polish.py`'s cursor track already did this; this brings it to
   `render.py`.
+- **`--cursor-spring K,C,M`** moves the pointer with a damped spring (stiffness, damping,
+  mass) instead of the Gaussian smoothing, for Screen Studio's ease-out and settle. Its
+  `mouseMovementSpring` defaults are `470,70,3`. A spring trails a moving target by about
+  `C/K` seconds, so the renderer reads the logged path that far ahead and the pointer still
+  lands on each click when it happens.
 
 ## Text callouts (`--callouts`)
 

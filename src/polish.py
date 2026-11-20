@@ -474,8 +474,8 @@ def spring_follow(targets, fps, stiffness, damping, mass, substeps=4):
         out.append(x)
     return out
 
-def smooth_positions(moves, fps, dur, sigma_frames=4, rest_px=2.0):
-    """Resample to frame grid, gaussian-smooth, snap micro-jitter at rest."""
+def frame_positions(moves, fps, dur):
+    """Cursor position on each frame, linearly interpolated between move samples."""
     n = int(dur*fps)+1
     xs, ys = [0.0]*n, [0.0]*n
     if not moves:               # events file with clicks/keys but no move lines (bug B)
@@ -491,6 +491,26 @@ def smooth_positions(moves, fps, dur, sigma_frames=4, rest_px=2.0):
             ys[i] = moves[j][2]+(moves[j+1][2]-moves[j][2])*a
         else:
             xs[i], ys[i] = moves[j][1], moves[j][2]
+    return xs, ys
+
+def spring_positions(moves, fps, dur, stiffness=470, damping=70, mass=3):
+    """Cursor track that follows the logged path through a damped spring, for Screen
+    Studio's eased settle (its `mouseMovementSpring`). A spring lags its target by about
+    damping/stiffness seconds on a ramp, so the target is read that far ahead: the
+    pointer still lands where it was when the click happened."""
+    xs, ys = frame_positions(moves, fps, dur)
+    if not moves: return xs, ys
+    lead = int(round(damping / stiffness * fps))
+    ahead = lambda v: v[lead:] + [v[-1]] * lead if lead > 0 else v
+    return (spring_follow(ahead(xs), fps, stiffness, damping, mass),
+            spring_follow(ahead(ys), fps, stiffness, damping, mass))
+
+def smooth_positions(moves, fps, dur, sigma_frames=4, rest_px=2.0):
+    """Resample to frame grid, gaussian-smooth, snap micro-jitter at rest."""
+    xs, ys = frame_positions(moves, fps, dur)
+    n = len(xs)
+    if not moves:
+        return xs, ys
     # gaussian kernel
     k = [math.exp(-0.5*(d/sigma_frames)**2) for d in range(-3*sigma_frames,3*sigma_frames+1)]
     ks = sum(k)
