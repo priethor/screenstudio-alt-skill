@@ -93,10 +93,16 @@ def load_events(path, vid):
     Cursor type: a `move` event may carry an optional `cursor` — a CSS cursor name
     (`default`, `pointer`, `text`, `col-resize`...). The real logger can't read another
     app's cursor, but logs written by browser automation can fill it from
-    getComputedStyle(); `cursor_kinds` lists (t, name) for render.py's sprite choice."""
+    getComputedStyle(); `cursor_kinds` lists (t, name) for render.py's sprite choice.
+
+    Captions: a `caption` event (`{"t", "type": "caption", "text"}`, optional `dur` in
+    seconds and `anchor`) puts an explanatory label on screen from that moment, so a
+    scripted demo can write each step's explanation as it performs it. `captions` lists
+    (t, text, dur, anchor); render.py maps them to output time."""
     header, moves, clicks, click_bbox, keys, key_bbox = None, [], [], [], [], None
     kinds = []   # (t, css cursor name) from optional `cursor` on move events
     ups = []     # (t, x, y) mouse releases, paired with `clicks` for the press animation
+    captions = []   # (t, text, dur or None, anchor or None)
     with open(path) as f:
         for line in f:
             line = line.strip()
@@ -112,6 +118,8 @@ def load_events(path, vid):
                 click_bbox.append(e.get("bbox"))
             elif e.get("type") == "up":
                 ups.append((t, e.get("x", 0), e.get("y", 0)))
+            elif e.get("type") == "caption":
+                captions.append((t, str(e["text"]), e.get("dur"), e.get("anchor")))
             elif e.get("type") == "key":
                 keys.append((t, e["key"]))
                 if key_bbox is None and e.get("bbox"): key_bbox = e["bbox"]
@@ -127,7 +135,8 @@ def load_events(path, vid):
     ups    = [(t, x*sx, y*sy) for t,x,y in ups]
     click_bbox = [scale_bbox(b) for b in click_bbox]
     return {"moves":moves, "clicks":clicks, "click_bbox":click_bbox,
-            "keys":keys, "key_bbox":scale_bbox(key_bbox), "cursor_kinds":kinds, "ups":ups}
+            "keys":keys, "key_bbox":scale_bbox(key_bbox), "cursor_kinds":kinds, "ups":ups,
+            "captions":captions}
 
 # ---------------------------------------------------------------- speedup
 def detect_freezes(path, noise=0.003, min_d=1.5):

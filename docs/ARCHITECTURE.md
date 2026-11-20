@@ -87,9 +87,13 @@ default `0.06`), with `--radius` corners and a drop shadow (`--no-shadow` drops 
 - **`--bg-image PATH`** puts a still image behind the card instead, such as a desktop
   wallpaper, scaled to cover the frame. **`--bg-blur`** blurs it (radius in pixels at 1280
   wide; `0`, the default, keeps it sharp). Screen Studio's blurred wallpaper with a thin
-  margin is roughly `--bg-image wallpaper.png --bg-blur 40 --pad 0.025 --radius 12`. Pillow
-  can't open HEIC, so convert macOS wallpapers first:
-  `sips -s format png "/System/Library/Desktop Pictures/.thumbnails/Ventura Graphic.heic" --out wallpaper.png`.
+  margin is roughly `--bg-image wallpaper.png --bg-blur 40 --pad 0.025 --radius 12`.
+- **`--wallpaper NAME`** picks a macOS wallpaper by the name the Wallpaper settings show
+  (`"Ventura Graphic"`, `Sonoma`, `"Big Sur Coastline"`...) and uses it as `--bg-image`; an
+  unknown name lists the available ones. It's converted once with `sips` into
+  `~/.cache/screenstudio-alt/wallpapers/`. Most wallpapers are only a small thumbnail until
+  they've been set as the desktop once: fine behind `--bg-blur`, soft without it (the
+  renderer says so).
 
 ## Cursor (`--cursor`)
 
@@ -145,6 +149,15 @@ python3 src/render.py demo.mp4 --regions regions.json --out out.mp4 \
 
 Reuses the keystroke-chip rendering approach (PIL text on a rounded pill). A web view to place
 callouts by eye and export the JSON is on the roadmap.
+
+**Captions from the event log.** When the recording comes from a script, it's easier to write
+each explanation at the step it describes: a `caption` event in `events.jsonl`,
+`{"t": 12.4, "type": "caption", "text": "Change the type to Text"}`, with optional `dur`
+(seconds of recording, default 3) and `anchor` (default `bottom`, where app windows tend to
+be empty; `top` when `--keys` puts keystroke chips at the bottom).
+The renderer maps it to output time through any trim and speed-up, keeps it on screen at
+least 1s of output, and ends it 0.3s before the next caption so only one shows at a time.
+No flag needed: captions in the events file always render.
 
 ## Studio UI — single-clip editor (`studio.py`)
 

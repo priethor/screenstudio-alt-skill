@@ -21,7 +21,7 @@ Usage:
             [--fit cover|contain] [--events E.jsonl] [--ramp 0.5] [--cursor] [--clickfx]
             [--speedup --idle-speed 8 | --speed-segments segs.json]
 """
-import argparse, json, math, os, subprocess, sys, importlib.util
+import argparse, difflib, json, math, os, subprocess, sys, importlib.util
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 
@@ -278,6 +278,36 @@ def image_backdrop(path, Tw, Th, blur=0.0):
     if blur > 0:
         img = img.filter(ImageFilter.GaussianBlur(blur * Tw / 1280))
     return img
+WALLPAPERS = "/System/Library/Desktop Pictures"
+def wallpaper_names():
+    """macOS wallpapers on this machine, by the name the Wallpaper settings show."""
+    names = set()
+    for folder in (WALLPAPERS, os.path.join(WALLPAPERS, ".thumbnails")):
+        if os.path.isdir(folder):
+            names |= {os.path.splitext(f)[0] for f in os.listdir(folder)
+                      if f.endswith((".heic", ".madesktop"))}
+    return sorted(names)
+
+def wallpaper_image(name, cache=os.path.expanduser("~/.cache/screenstudio-alt/wallpapers")):
+    """PNG path for a macOS wallpaper by name, and whether it's only the small thumbnail.
+    Most wallpapers stay a ~200px thumbnail until they're set as the desktop once; that
+    reads fine behind --bg-blur but blurry without it. Converted once with `sips`, since
+    Pillow can't open HEIC."""
+    full = os.path.join(WALLPAPERS, name + ".heic")
+    thumb = os.path.join(WALLPAPERS, ".thumbnails", name + ".heic")
+    src = full if os.path.isfile(full) else thumb if os.path.isfile(thumb) else None
+    if src is None:
+        close = difflib.get_close_matches(name, wallpaper_names(), n=5, cutoff=0.4)
+        hint = f" Did you mean: {', '.join(close)}?" if close else ""
+        raise ValueError(f"no macOS wallpaper named {name!r}.{hint} "
+                         f"Available: {', '.join(wallpaper_names()) or 'none'}")
+    os.makedirs(cache, exist_ok=True)
+    out = os.path.join(cache, name + ".png")
+    if not os.path.isfile(out) or os.path.getmtime(out) < os.path.getmtime(src):
+        subprocess.run(["sips", "-s", "format", "png", src, "--out", out],
+                       check=True, capture_output=True)
+    return out, src == thumb
+
 def rounded_mask(w, h, rad):
     m = Image.new("L", (w, h), 0); ImageDraw.Draw(m).rounded_rectangle([0,0,w-1,h-1], rad, fill=255)
     return m
@@ -321,6 +351,24 @@ def time_maps(segs):
                 return o0 + (max(s0, min(st, s1)) - s0) / sp
         return out
     return o2s, s2o, out
+
+def caption_callouts(captions, s2o, out_dur, hold=3.0, min_on=1.0, gap=0.3,
+                     anchor="bottom", size=0.04):
+    """Caption events (source time) -> callouts (output time). Each shows from its moment
+    for `dur` (default `hold`) seconds of the recording, at least `min_on` seconds of
+    output so it survives a speed-up, and ends `gap` before the next one: one label on
+    screen at a time. Bottom by default, where app windows tend to be empty; the caller
+    moves them to the top when keystroke chips take the bottom."""
+    caps = sorted(captions, key=lambda c: c[0])
+    out = []
+    for i, (t, text, dur, anc) in enumerate(caps):
+        t0 = s2o(t)
+        t1 = max(s2o(t + (dur or hold)), t0 + min_on)
+        if i + 1 < len(caps): t1 = min(t1, s2o(caps[i+1][0]) - gap)
+        t1 = min(t1, out_dur)
+        if t1 > t0:
+            out.append({"t0": t0, "t1": t1, "text": text, "anchor": anc or anchor, "size": size})
+    return out
 
 # ---- eased camera trajectory ------------------------------------------------
 def ease_curve(a, curve="smooth"):
@@ -552,7 +600,7 @@ def render(src, regions, out_path, *, aspect="16:9", fit="cover", events=None, f
     cur_h = max(8, int(round(38 * cursor_scale * ui)))
     use_cursor_set(cursor_set)
     callouts = list(callouts or [])
-    if (cursor or clickfx or keys) and events:
+    if events:
         ev = polish.load_events(events, vid)
         if cursor:
             # cursor tracks run on their own clock, at least the output rate, and are read
@@ -568,6 +616,9 @@ def render(src, regions, out_path, *, aspect="16:9", fit="cover", events=None, f
             if click_press: cur_press = press_scales(ev["clicks"], ev.get("ups", []), cfps, vid["dur"])
             if cursor_idle_fade > 0: cur_alpha = idle_alphas(cur_xs, cur_ys, ev["clicks"], cfps, cursor_idle_fade)
         if clickfx: clicks = [(t, x, y) for t, x, y in ev["clicks"]]
+        if ev.get("captions"):
+            callouts += caption_callouts(ev["captions"], s2o, out_dur,
+                                         anchor="top" if keys else "bottom")
         if keys:   # keystroke caption = ONE bottom-center window per burst whose text grows
             callouts += [{"t0": s2o(g["t0"]), "t1": s2o(g["t1"]), "anchor": "bottom", "size": 0.055,
                           "steps": [(s2o(st), tx) for st, tx in g["steps"]]}
@@ -823,6 +874,9 @@ if __name__ == "__main__":
     ap.add_argument("--bg-image", metavar="PATH",
                     help="use an image as the backdrop (e.g. a desktop wallpaper), scaled to cover "
                          "the frame; replaces --bg")
+    ap.add_argument("--wallpaper", metavar="NAME",
+                    help="use a macOS wallpaper as --bg-image by its name, e.g. 'Ventura Graphic' "
+                         "or Sonoma; an unknown name lists the ones available")
     ap.add_argument("--bg-blur", type=float, default=0.0,
                     help="Gaussian blur radius for --bg-image, in pixels at 1280 wide (0 = sharp)")
     ap.add_argument("--pad", type=float, default=0.06)
@@ -846,6 +900,16 @@ if __name__ == "__main__":
     if a.trim_in or a.trim_out:                       # restrict the time-remap to the trimmed source window
         _dur = polish.probe(a.src)["dur"]
         segs = clip_segs_to_trim(segs, _dur, a.trim_in, a.trim_out)
+    if a.wallpaper:
+        if a.bg_image: ap.error("--wallpaper replaces --bg-image; pass one of them")
+        try:
+            a.bg_image, thumb_only = wallpaper_image(a.wallpaper)
+        except (ValueError, subprocess.CalledProcessError, FileNotFoundError) as e:
+            ap.error(f"--wallpaper: {e}")
+        if thumb_only and a.bg_blur < 10:
+            print(f"note: only a small thumbnail of {a.wallpaper!r} is on this machine; it looks "
+                  "soft without --bg-blur (set it as the desktop once for the full image)",
+                  file=sys.stderr)
     if a.bg_image and a.bg != "none":
         ap.error("--bg-image replaces --bg; pass one of them")
     if a.bg_image and not os.path.isfile(a.bg_image):

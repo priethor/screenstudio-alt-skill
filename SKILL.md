@@ -74,9 +74,11 @@ Blurred macOS wallpaper behind the window with a thin margin, rounded corners, s
 macOS cursor with real cursor types that grows with the zoom, squashes on click, moves on a
 spring and hides when it stops. No click ripple (`--clickfx` off), no click sound.
 
+The wallpaper is Ventura Graphic unless the user asks for another: `--wallpaper` takes any
+name from macOS's Wallpaper settings (`Sonoma`, `"Big Sur Coastline"`...), and a wrong one
+lists what's available.
+
 ```bash
-# once per machine: Pillow can't read HEIC
-sips -s format png "/System/Library/Desktop Pictures/.thumbnails/Ventura Graphic.heic" --out ~/.cache/demo-wallpaper.png
 # once per machine, needs Screen Studio installed: its macOS cursor set (arrow, hand, I-beam, resize)
 python3 src/screenstudio-cursors.py ~/.cache/screenstudio-cursors
 ```
@@ -86,7 +88,7 @@ Style flags, used in every render below:
 ```bash
 --fps 60 --cursor --cursor-scale 1.0 --cursor-zoom \
   --cursor-set "$HOME/.cache/screenstudio-cursors" --click-press --cursor-idle-fade 2.5 \
-  --cursor-spring 470,70,3 --bg-image "$HOME/.cache/demo-wallpaper.png" --bg-blur 40 \
+  --cursor-spring 470,70,3 --wallpaper "Ventura Graphic" --bg-blur 40 \
   --pad 0.025 --radius 12 --width 1920
 ```
 
@@ -102,6 +104,9 @@ Slow enough to follow one idea at a time.
 - Moderate zoom, hand-written regions at ~1.4-1.8x on the area being changed (auto-zoom tends
   to land at 2.6x and on sidebar clicks). Pull back out between unrelated steps.
 - `--keys` only when the typed text matters (a formula, a name the viewer must read).
+- A short caption per step when the action alone doesn't explain itself ("The sum can't run
+  on text anymore"), written as a `caption` event at the step (see below). A few words,
+  sentence case, no trailing period on fragments.
 - 15-45 s per clip. For a release summary, render each highlight separately with the same
   style and concatenate them.
 
@@ -109,7 +114,7 @@ Slow enough to follow one idea at a time.
 python3 src/render.py src.mp4 --regions regions.json --events events.jsonl --out demo.mp4 \
   --fps 60 --cursor --cursor-scale 1.0 --cursor-zoom \
   --cursor-set "$HOME/.cache/screenstudio-cursors" --click-press --cursor-idle-fade 2.5 \
-  --cursor-spring 470,70,3 --bg-image "$HOME/.cache/demo-wallpaper.png" --bg-blur 40 \
+  --cursor-spring 470,70,3 --wallpaper "Ventura Graphic" --bg-blur 40 \
   --pad 0.025 --radius 12 --width 1920
 ```
 
@@ -121,14 +126,15 @@ Fast and dense, closer to a product video.
   source duration as `DUR`.
 - Camera zoomed most of the time (~1.5-2x), following groups of clicks; short holds. Open on a
   zoomed hero shot, then pull out.
-- No `--keys`: the chips overwhelm at this pace.
+- No `--keys`: the chips overwhelm at this pace. Captions only to name each feature as it
+  starts, with a longer `dur` so they're readable at 2x.
 
 ```bash
 python3 src/render.py src.mp4 --regions regions.json --events events.jsonl --out walkthrough.mp4 \
   --speed-segments '[{"t0":0,"t1":DUR,"speed":2}]' \
   --fps 60 --cursor --cursor-scale 1.0 --cursor-zoom \
   --cursor-set "$HOME/.cache/screenstudio-cursors" --click-press --cursor-idle-fade 2.5 \
-  --cursor-spring 470,70,3 --bg-image "$HOME/.cache/demo-wallpaper.png" --bg-blur 40 \
+  --cursor-spring 470,70,3 --wallpaper "Ventura Graphic" --bg-blur 40 \
   --pad 0.025 --radius 12 --width 1920
 ```
 
@@ -138,7 +144,10 @@ python3 src/render.py src.mp4 --regions regions.json --events events.jsonl --out
 the flow with a throwaway Playwright script (`video: { mode: 'on', size }`, 1920x1080) and
 write `events.jsonl` from the same script: header `{type:'header',display:{w,h},scale:1}`,
 eased `move` events at ~60 Hz with `cursor` set from `getComputedStyle(el).cursor` of the
-hovered element, `down`/`up` with the element's `bbox`, and `key` events while typing.
+hovered element, `down`/`up` with the element's `bbox`, `key` events while typing, and a
+`{type:'caption', text}` event at each step that needs an explanation (optional `dur` in
+seconds, `anchor`). The renderer shows captions at the right moment after trims and
+speed-ups, one at a time.
 Timestamps relative to the start of the test line up with the video. Convert the webm to
 mp4 (`ffmpeg -i in.webm -r 25 src.mp4`) before rendering, and trim the page load with
 `--trim-in`.

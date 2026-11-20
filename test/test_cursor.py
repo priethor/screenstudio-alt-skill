@@ -2,6 +2,7 @@
 """Checks for the cursor and backdrop options in render.py. No dependencies beyond the
 renderer's own (numpy, Pillow); run with `python3 test/test_cursor.py`."""
 import importlib.util, json, os, sys, tempfile
+import numpy as np
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -264,6 +265,50 @@ def test_cursor_moves_on_every_output_frame_of_a_low_fps_source():
         xs.append(im.getbbox()[0])
     steps = [b - a for a, b in zip(xs, xs[1:])]
     assert all(st > 0 for st in steps), xs   # tied to 25fps source frames, some steps were 0
+
+def test_load_events_reads_captions():
+    path = _events([HEADER,
+                    {"t": 1.0, "type": "caption", "text": "Open the menu"},
+                    {"t": 4.0, "type": "caption", "text": "Pick Text", "dur": 2, "anchor": "bottom"}])
+    ev = polish.load_events(path, VID)
+    assert ev["captions"] == [(1.0, "Open the menu", None, None), (4.0, "Pick Text", 2, "bottom")]
+
+def test_captions_hold_and_never_overlap():
+    same = lambda t: t
+    out = render.caption_callouts([(1.0, "a", None, None), (2.5, "b", None, None), (8.0, "c", 1.0, "top")],
+                                  same, 20.0)
+    assert [(c["t0"], round(c["t1"], 2), c["anchor"]) for c in out] == \
+        [(1.0, 2.2, "bottom"), (2.5, 5.5, "bottom"), (8.0, 9.0, "top")]
+
+def test_captions_follow_the_output_clock_and_stay_readable():
+    double = lambda t: t / 2          # whole recording at 2x
+    out = render.caption_callouts([(4.0, "fast", 1.0, None)], double, 20.0)
+    assert out[0]["t0"] == 2.0 and out[0]["t1"] == 3.0   # 0.5s of output, stretched to 1s
+
+def test_unknown_wallpaper_suggests_names():
+    if not render.wallpaper_names(): return          # not macOS
+    try:
+        render.wallpaper_image("Ventura Graphik")
+    except ValueError as e:
+        assert "Ventura Graphic" in str(e), e
+    else:
+        raise AssertionError("expected a ValueError")
+
+def test_render_draws_caption_events():
+    import subprocess
+    from PIL import Image
+    tmp = tempfile.mkdtemp()
+    src = os.path.join(tmp, "src.mp4"); out = os.path.join(tmp, "out.mp4")
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "color=white:s=1280x720:d=3:r=10",
+                    "-pix_fmt", "yuv420p", src], check=True)
+    events = _events([HEADER, {"t": 1.0, "type": "caption", "text": "Change the type"}])
+    render.render(src, [], out, fps=10, events=events)
+    def bottom_dark(t):
+        png = os.path.join(tmp, f"f{t}.png")
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", str(t), "-i", out, "-frames:v", "1", png], check=True)
+        band = Image.open(png).convert("L").crop((0, 600, 1280, 720))
+        return int((np.asarray(band) < 100).sum())
+    assert bottom_dark(0.5) == 0 and bottom_dark(2.0) > 500
 
 def test_render_width_sets_the_output_size():
     import subprocess
