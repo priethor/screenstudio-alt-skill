@@ -107,7 +107,8 @@ default `0.06`), with `--radius` corners and a drop shadow (`--no-shadow` drops 
   `pointer`, `text`, `ew` or `ns`, plus `hotspots.json` with each hotspot in image pixels.
   The arrow's opaque height sets the scale for the whole set; kinds without an image keep
   the drawn ones. `src/screenstudio-cursors.py DIR` fills a folder from a local Screen
-  Studio install (its macOS set; the I-beam stays drawn). Those images are Screen Studio's,
+  Studio install (its macOS set: arrow, hand, I-beam and resize arrows; the I-beam is a bare
+  vector there, so the script draws it with the same white outline and shadow). Those images are Screen Studio's,
   so they're read from your copy of the app and never committed here.
 - **`--cursor-zoom`** grows the cursor with the camera, as if it were part of the screen
   (Screen Studio draws it that way). Without it the cursor keeps the same size on zooms.

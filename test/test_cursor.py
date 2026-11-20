@@ -79,6 +79,17 @@ def test_cursor_set_replaces_drawn_sprites_and_keeps_the_rest():
     finally:
         render.use_cursor_set(None)
 
+def test_screenstudio_extractor_reads_vector_paths():
+    spec = importlib.util.spec_from_file_location("ssc", os.path.join(ROOT, "src", "screenstudio-cursors.py"))
+    ssc = importlib.util.module_from_spec(spec); spec.loader.exec_module(ssc)
+    pts = ssc._path_points("M 0 0 L 10 0 C 10 5 5 10 0 10 Z", steps=4)
+    assert pts[0] == (0.0, 0.0) and pts[1] == (10.0, 0.0) and pts[-1] == (0.0, 10.0) and len(pts) == 6
+    svg = '<svg viewBox="0 0 100 100"><path d="M 40 20 L 60 20 L 60 80 L 40 80 Z"/></svg>'
+    img = ssc._vector_cursor(svg, ss=2)
+    assert img.size == (100, 100)
+    assert img.getpixel((50, 50))[:3] == (0, 0, 0) and img.getpixel((50, 50))[3] == 255   # black body
+    assert min(img.getpixel((35, 50))[:3]) > 200                                          # white ring
+
 def test_cursor_scale_grows_the_sprite():
     small = render.kind_sprite("pointer", 38)[0]
     big = render.kind_sprite("pointer", 57)[0]

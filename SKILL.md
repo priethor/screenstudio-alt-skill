@@ -77,7 +77,7 @@ spring and hides when it stops. No click ripple (`--clickfx` off), no click soun
 ```bash
 # once per machine: Pillow can't read HEIC
 sips -s format png "/System/Library/Desktop Pictures/.thumbnails/Ventura Graphic.heic" --out ~/.cache/demo-wallpaper.png
-# once per machine, needs Screen Studio installed: its macOS cursor set (hand, arrow, resize)
+# once per machine, needs Screen Studio installed: its macOS cursor set (arrow, hand, I-beam, resize)
 python3 src/screenstudio-cursors.py ~/.cache/screenstudio-cursors
 ```
 
