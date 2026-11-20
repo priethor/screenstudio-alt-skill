@@ -124,6 +124,31 @@ def press_scales(downs, ups, fps, dur, depth=0.18, stiffness=700, damping=30, ma
     targets = [1.0 - depth if p else 1.0 for p in pressed]
     return polish.spring_follow(targets, fps, stiffness, damping, mass)
 
+def idle_alphas(xs, ys, downs, fps, after, fade_out=0.4, fade_in=0.12, still_px=0.5):
+    """Per-source-frame cursor opacity that fades the pointer out once it has been still
+    for `after` seconds and brings it back when it moves again. Movement means the
+    smoothed position changed by more than `still_px`; a click also counts as activity.
+    The fade-in is quick but not instant, so the pointer doesn't pop back."""
+    n = len(xs)
+    if n == 0: return []
+    down_frames = {int(round(t*fps)) for t, _, _ in downs}
+    out, idle, prev = [], 0.0, 1.0
+    for i in range(n):
+        moved = i > 0 and (abs(xs[i]-xs[i-1]) > still_px or abs(ys[i]-ys[i-1]) > still_px)
+        idle = 0.0 if (moved or i in down_frames) else idle + 1.0/fps
+        want = 1.0 if idle < after else max(0.0, 1.0 - (idle - after) / fade_out)
+        a = min(want, prev + 1.0/(fps*fade_in)) if want > prev else want
+        out.append(a); prev = a
+    return out
+
+def faded_sprite(sprite, alpha):
+    """Scale a (sprite, hx, hy)'s opacity; None when fully transparent."""
+    if alpha >= 0.999: return sprite
+    if alpha <= 0.001: return None
+    spr, hx, hy = sprite
+    spr = spr.copy(); spr.putalpha(spr.split()[3].point(lambda v: int(v * alpha)))
+    return spr, hx, hy
+
 def scaled_sprite(sprite, scale):
     """Resize a (sprite, hotspot_x, hotspot_y) around its hotspot."""
     spr, hx, hy = sprite
@@ -401,7 +426,7 @@ def _bake_metadata(out_path, moments, *, src, fps, Sw, Sh, Tw, Th, out_dur):
 def render(src, regions, out_path, *, aspect="16:9", fit="cover", events=None, fps=60,
            ramp=0.5, curve="smooth", cursor=False, clickfx=False, keys=False, segs=None,
            bg="none", pad=0.06, radius=18, shadow=True, callouts=None, progress_file=None,
-           metadata=True, cursor_scale=1.0, click_press=False):
+           metadata=True, cursor_scale=1.0, click_press=False, cursor_idle_fade=0.0):
     vid = polish.probe(src)
     Sw, Sh, sfps = vid["w"], vid["h"], vid["fps"]
     o2s, s2o, out_dur = time_maps(segs) if segs else (lambda t: t, lambda t: t, vid["dur"])
@@ -463,7 +488,7 @@ def render(src, regions, out_path, *, aspect="16:9", fit="cover", events=None, f
     cyt = ease_traj(R, "cy", Sh/2, fps, out_dur, ramp, curve)
     nframes = len(zt)
 
-    cur_xs = cur_ys = None; clicks = []; cur_kinds = None; cur_press = None
+    cur_xs = cur_ys = None; clicks = []; cur_kinds = None; cur_press = None; cur_alpha = None
     cur_h = max(8, int(round(38 * cursor_scale)))
     callouts = list(callouts or [])
     if (cursor or clickfx or keys) and events:
@@ -472,6 +497,7 @@ def render(src, regions, out_path, *, aspect="16:9", fit="cover", events=None, f
             cur_xs, cur_ys = polish.smooth_positions(ev["moves"], sfps, vid["dur"])
             if ev.get("cursor_kinds"): cur_kinds = cursor_kind_track(ev["cursor_kinds"], sfps, vid["dur"])
             if click_press: cur_press = press_scales(ev["clicks"], ev.get("ups", []), sfps, vid["dur"])
+            if cursor_idle_fade > 0: cur_alpha = idle_alphas(cur_xs, cur_ys, ev["clicks"], sfps, cursor_idle_fade)
         if clickfx: clicks = [(t, x, y) for t, x, y in ev["clicks"]]
         if keys:   # keystroke caption = ONE bottom-center window per burst whose text grows
             callouts += [{"t0": s2o(g["t0"]), "t1": s2o(g["t1"]), "anchor": "bottom", "size": 0.055,
@@ -562,8 +588,10 @@ def render(src, regions, out_path, *, aspect="16:9", fit="cover", events=None, f
                     kind = cur_kinds[min(cur_src_idx, len(cur_kinds)-1)] if cur_kinds else "default"
                     sprite = kind_sprite(kind, cur_h)   # crisp fixed-size cursor (no balloon)
                     if cur_press: sprite = scaled_sprite(sprite, cur_press[min(cur_src_idx, len(cur_press)-1)])
-                    spr, hx, hy = sprite
-                    img.paste(spr, (int(round(ox-hx)), int(round(oy-hy))), spr)
+                    if cur_alpha: sprite = faded_sprite(sprite, cur_alpha[min(cur_src_idx, len(cur_alpha)-1)])
+                    if sprite is not None:
+                        spr, hx, hy = sprite
+                        img.paste(spr, (int(round(ox-hx)), int(round(oy-hy))), spr)
             # composite: drop the Cw×Ch content onto the backdrop (rounded + shadow). The
             # content rect already carries the right aspect — NO second resize/squash here.
             if use_bg:
@@ -700,6 +728,8 @@ if __name__ == "__main__":
                     help="cursor size multiplier (1.0 = 38px tall at 1280 wide)")
     ap.add_argument("--click-press", action="store_true",
                     help="shrink the cursor while the mouse is down and spring it back on release")
+    ap.add_argument("--cursor-idle-fade", type=float, default=0.0,
+                    help="fade the cursor out after this many seconds without moving (0 = always visible)")
     ap.add_argument("--keys", action="store_true", help="keystroke chips (auto bottom callouts; needs --events)")
     ap.add_argument("--speedup", action="store_true"); ap.add_argument("--idle-speed", type=float, default=8.0)
     ap.add_argument("--speed-segments")
@@ -731,5 +761,6 @@ if __name__ == "__main__":
     r = render(a.src, regions, a.out, aspect=a.aspect, fit=a.fit, events=a.events, fps=a.fps,
                ramp=a.ramp, curve=a.curve, cursor=a.cursor, clickfx=a.clickfx, keys=a.keys, segs=segs,
                bg=a.bg, pad=a.pad, radius=a.radius, shadow=not a.no_shadow, callouts=callouts, progress_file=a.progress_file,
-               metadata=not a.no_metadata, cursor_scale=a.cursor_scale, click_press=a.click_press)
+               metadata=not a.no_metadata, cursor_scale=a.cursor_scale, click_press=a.click_press,
+               cursor_idle_fade=a.cursor_idle_fade)
     print(json.dumps(r))

@@ -85,6 +85,36 @@ def test_scaled_sprite_keeps_the_hotspot_in_place():
     assert abs(hx2 - hx * 0.8) < 1e-6 and abs(hy2 - hy * 0.8) < 1e-6
     assert s2.width < spr.width
 
+def _still_then_move(fps, still_s, move_at):
+    n = int((move_at + 1.0) * fps)
+    xs = [100.0 if i < move_at*fps else 100.0 + (i - move_at*fps) * 5 for i in range(n)]
+    return xs, [50.0] * n
+
+def test_idle_alpha_fades_after_the_threshold():
+    fps = 60
+    xs, ys = _still_then_move(fps, 0, 6.0)
+    alpha = render.idle_alphas(xs, ys, [], fps, after=2.5)
+    assert alpha[int(2.0*fps)] == 1.0
+    assert alpha[int(3.5*fps)] == 0.0
+
+def test_idle_alpha_comes_back_on_movement():
+    fps = 60
+    xs, ys = _still_then_move(fps, 0, 6.0)
+    alpha = render.idle_alphas(xs, ys, [], fps, after=2.5)
+    back = alpha[int(6.0*fps)+1:int(6.5*fps)]
+    assert back[0] < 1.0 and back[-1] == 1.0   # quick fade-in, not a pop
+
+def test_idle_alpha_treats_a_click_as_activity():
+    fps = 60
+    xs, ys = [100.0] * (5*fps), [50.0] * (5*fps)
+    alpha = render.idle_alphas(xs, ys, [(2.0, 100, 50)], fps, after=2.5)
+    assert alpha[int(4.0*fps)] == 1.0
+
+def test_faded_sprite_hides_at_zero():
+    sprite = render.kind_sprite("default", 38)
+    assert render.faded_sprite(sprite, 0.0) is None
+    assert render.faded_sprite(sprite, 1.0) is sprite
+
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
 
 if __name__ == "__main__":

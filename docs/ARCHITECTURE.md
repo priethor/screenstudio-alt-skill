@@ -88,6 +88,11 @@ substitute for `render.py`: every Studio export and high-quality zoom/pan goes t
 - **`--click-press`** shrinks the pointer while the mouse is down and springs it back on
   release, Screen Studio's default click feedback. It pairs each `down` with the next `up`
   and holds at least 80ms so a quick click still reads. Works with or without `--clickfx`.
+- **`--cursor-idle-fade SECONDS`** fades the pointer out once it has been still for that
+  long and fades it back in quickly when it moves (a click also counts as activity). `0`,
+  the default, keeps it on screen. Useful for pauses where the content should breathe,
+  such as a page loading. `polish.py`'s cursor track already did this; this brings it to
+  `render.py`.
 
 ## Text callouts (`--callouts`)
 
