@@ -52,6 +52,12 @@ def cursor_pos(t):
     if t < 22.0:   return PANEL                                        # typing + idle (still)
     return lerp(PANEL, CENTER, ease((t-22.0)/2.0))
 
+def cursor_kind_at(t):
+    """CSS cursor under the pointer: a hand over the button, an I-beam while typing."""
+    if 1.0 <= t < 9.0:  return "pointer"
+    if 11.0 <= t < 22.0: return "text"
+    return "default"
+
 def typed_at(t):
     if t < TYPE_T0: return ""
     n = int((t-TYPE_T0)*TYPE_CPS)
@@ -107,7 +113,8 @@ def main():
     ev=[{"type":"header","epoch":0.0,"display":{"w":W,"h":H},"scale":1.0}]
     t=0.0
     while t<DUR:                                   # 30Hz move samples
-        x,y=cursor_pos(t); ev.append({"t":round(t,3),"type":"move","x":round(x,1),"y":round(y,1)}); t+=1/30
+        x,y=cursor_pos(t); ev.append({"t":round(t,3),"type":"move","x":round(x,1),"y":round(y,1),
+                                      "cursor":cursor_kind_at(t)}); t+=1/30
     for ct,cx,cy in CLICKS:
         ev.append({"t":ct,"type":"down","x":cx,"y":cy,"button":"left"})
         ev.append({"t":round(ct+0.08,3),"type":"up","x":cx,"y":cy,"button":"left"})

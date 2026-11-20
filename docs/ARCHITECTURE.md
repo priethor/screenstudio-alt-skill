@@ -73,6 +73,19 @@ python3 src/render.py SRC.mp4 --regions regions.json --out out.mp4 \
 it does the `--speedup`/idle-detection work and needs no numpy itself, but it is **not** a
 substitute for `render.py`: every Studio export and high-quality zoom/pan goes through `render.py`.)
 
+## Cursor (`--cursor`)
+
+`--cursor` draws a synthetic, smoothed pointer from the event log. Options on top of it:
+
+- **Cursor types.** A `move` event can carry an optional `cursor` with a CSS cursor name
+  (`default`, `pointer`, `text`, `col-resize`, `ns-resize`...). The renderer swaps in a
+  matching sprite: hand, I-beam, or resize arrows; anything else falls back to the arrow.
+  The sprites are drawn in code in the macOS style, so no Apple artwork ships with the tool.
+  `events-log` can't read another app's cursor, but logs written by browser automation can
+  fill it from `getComputedStyle()` on the hovered element.
+- **`--cursor-scale`** (default `1.0`, 38px tall at 1280 wide) makes every sprite bigger or
+  smaller; Screen Studio's own default reads closer to `1.5`.
+
 ## Text callouts (`--callouts`)
 
 Screen-fixed explanatory labels, drawn **last** on the final output frame (so they stay put

@@ -30,7 +30,7 @@ def cursor_sprite(h=38):
     """Crisp macOS-style arrow pointer: 4× supersampled + LANCZOS down (anti-aliased),
     white outline, soft drop shadow. Returns (RGBA sprite, hotspot_x, hotspot_y)."""
     global _CURSOR
-    if _CURSOR is not None: return _CURSOR
+    if _CURSOR is not None and _CURSOR[0] == h: return _CURSOR[1]
     ss = 4; H = h * ss
     pts = [(0,0),(0,0.80),(0.23,0.62),(0.35,0.93),(0.47,0.88),(0.33,0.59),(0.58,0.59)]
     P = [(x*H, y*H) for x,y in pts]; pad = int(0.22*H)
@@ -41,8 +41,85 @@ def cursor_sprite(h=38):
     base = Image.alpha_composite(Image.new("RGBA",sz,(0,0,0,0)), sh.filter(ImageFilter.GaussianBlur(ss*1.6)))
     ImageDraw.Draw(base).polygon(off, fill=(22,22,24,255), outline=(255,255,255,255), width=int(ss*1.7))
     spr = base.resize((sz[0]//ss, sz[1]//ss), Image.LANCZOS)
-    _CURSOR = (spr, pad//ss, pad//ss)
-    return _CURSOR
+    _CURSOR = (h, (spr, pad//ss, pad//ss))
+    return _CURSOR[1]
+
+# ---- cursor types ------------------------------------------------------------
+# Drawn in code in the macOS style (no Apple artwork is shipped): the hand is white with
+# a dark outline, the I-beam and resize arrows dark with a white outline, like the system
+# ones. Shapes are described in units of the sprite height H.
+_CURSOR_KINDS = {
+    "pointer": "pointer", "grab": "pointer", "grabbing": "pointer",
+    "text": "text", "vertical-text": "text",
+    "col-resize": "ew", "ew-resize": "ew", "e-resize": "ew", "w-resize": "ew",
+    "row-resize": "ns", "ns-resize": "ns", "n-resize": "ns", "s-resize": "ns",
+}
+def cursor_kind(name):
+    """Map a CSS cursor name to the sprite family that draws it ('default' if unknown)."""
+    return _CURSOR_KINDS.get(str(name or "").strip().lower(), "default")
+
+def _hand(d, u, ox, oy):
+    rr = lambda x0, y0, x1, y1, r: d.rounded_rectangle([ox+x0*u, oy+y0*u, ox+x1*u, oy+y1*u], r*u, fill=255)
+    rr(0.30, 0.00, 0.44, 0.62, 0.07)        # index finger
+    rr(0.43, 0.30, 0.56, 0.64, 0.06)        # middle
+    rr(0.55, 0.34, 0.67, 0.66, 0.06)        # ring
+    rr(0.66, 0.40, 0.77, 0.68, 0.055)       # little
+    rr(0.20, 0.50, 0.77, 0.98, 0.15)        # palm
+    d.line([ox+0.30*u, oy+0.80*u, ox+0.10*u, oy+0.58*u], fill=255, width=int(0.13*u))   # thumb
+    d.ellipse([ox+0.035*u, oy+0.515*u, ox+0.165*u, oy+0.645*u], fill=255)
+
+def _ibeam(d, u, ox, oy):
+    rr = lambda x0, y0, x1, y1: d.rectangle([ox+x0*u, oy+y0*u, ox+x1*u, oy+y1*u], fill=255)
+    rr(0.155, 0.10, 0.205, 0.90)            # stem
+    rr(0.05, 0.07, 0.31, 0.12)              # top serif
+    rr(0.05, 0.88, 0.31, 0.93)              # bottom serif
+
+def _resize(d, u, ox, oy, vertical):
+    def pt(x, y): return (ox+y*u, oy+x*u) if vertical else (ox+x*u, oy+y*u)
+    d.polygon([pt(0.20, 0.215), pt(0.70, 0.215), pt(0.70, 0.285), pt(0.20, 0.285)], fill=255)
+    d.polygon([pt(0.00, 0.25), pt(0.25, 0.04), pt(0.25, 0.46)], fill=255)
+    d.polygon([pt(0.90, 0.25), pt(0.65, 0.04), pt(0.65, 0.46)], fill=255)
+
+_SHAPES = {   # kind: (draw fn, box width, box height, hotspot, fill, outline) in units of H
+    "pointer": (_hand, 0.80, 1.00, (0.37, 0.0), (255,255,255), (22,22,24)),
+    "text":    (_ibeam, 0.36, 1.00, (0.18, 0.5), (22,22,24), (255,255,255)),
+    "ew":      (lambda d,u,ox,oy: _resize(d,u,ox,oy,False), 0.90, 0.50, (0.45, 0.25), (22,22,24), (255,255,255)),
+    "ns":      (lambda d,u,ox,oy: _resize(d,u,ox,oy,True), 0.50, 0.90, (0.25, 0.45), (22,22,24), (255,255,255)),
+}
+_KIND_CACHE = {}
+def kind_sprite(kind, h=38):
+    """Sprite for a cursor family: (RGBA sprite, hotspot_x, hotspot_y). Same outline,
+    shadow and supersampling as the arrow, so every type reads as one set."""
+    if kind not in _SHAPES: return cursor_sprite(h)
+    key = (kind, h)
+    if key in _KIND_CACHE: return _KIND_CACHE[key]
+    draw, bw, bh, hot, fill, outline = _SHAPES[kind]
+    ss = 4; u = h * ss; pad = int(0.22*u)
+    sz = (int(bw*u)+2*pad, int(bh*u)+2*pad)
+    m = Image.new("L", sz, 0); draw(ImageDraw.Draw(m), u, pad, pad)
+    ow = int(ss*1.7)
+    outer = m.filter(ImageFilter.MaxFilter(2*ow+1))
+    sh = Image.new("L", sz, 0); sh.paste(outer, (int(ss*1.2), int(ss*2.0)))
+    sh = sh.filter(ImageFilter.GaussianBlur(ss*1.6)).point(lambda v: int(v*140/255))
+    base = Image.new("RGBA", sz, (0,0,0,0))
+    base.paste((0,0,0,255), (0,0), sh)
+    base.paste(outline+(255,), (0,0), outer)
+    base.paste(fill+(255,), (0,0), m)
+    spr = base.resize((sz[0]//ss, sz[1]//ss), Image.LANCZOS)
+    _KIND_CACHE[key] = (spr, (pad + hot[0]*u)/ss, (pad + hot[1]*u)/ss)
+    return _KIND_CACHE[key]
+
+def cursor_kind_track(kinds, fps, dur):
+    """Per-source-frame sprite family from (t, css name) samples: each frame takes the
+    latest sample at or before it; frames before the first sample use the arrow."""
+    n = int(dur*fps)+1; out = ["default"]*n
+    if not kinds: return out
+    ks = sorted(kinds); j = -1
+    for i in range(n):
+        t = i/fps
+        while j+1 < len(ks) and ks[j+1][0] <= t: j += 1
+        if j >= 0: out[i] = cursor_kind(ks[j][1])
+    return out
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -302,7 +379,7 @@ def _bake_metadata(out_path, moments, *, src, fps, Sw, Sh, Tw, Th, out_dur):
 def render(src, regions, out_path, *, aspect="16:9", fit="cover", events=None, fps=60,
            ramp=0.5, curve="smooth", cursor=False, clickfx=False, keys=False, segs=None,
            bg="none", pad=0.06, radius=18, shadow=True, callouts=None, progress_file=None,
-           metadata=True):
+           metadata=True, cursor_scale=1.0):
     vid = polish.probe(src)
     Sw, Sh, sfps = vid["w"], vid["h"], vid["fps"]
     o2s, s2o, out_dur = time_maps(segs) if segs else (lambda t: t, lambda t: t, vid["dur"])
@@ -364,11 +441,14 @@ def render(src, regions, out_path, *, aspect="16:9", fit="cover", events=None, f
     cyt = ease_traj(R, "cy", Sh/2, fps, out_dur, ramp, curve)
     nframes = len(zt)
 
-    cur_xs = cur_ys = None; clicks = []
+    cur_xs = cur_ys = None; clicks = []; cur_kinds = None
+    cur_h = max(8, int(round(38 * cursor_scale)))
     callouts = list(callouts or [])
     if (cursor or clickfx or keys) and events:
         ev = polish.load_events(events, vid)
-        if cursor: cur_xs, cur_ys = polish.smooth_positions(ev["moves"], sfps, vid["dur"])
+        if cursor:
+            cur_xs, cur_ys = polish.smooth_positions(ev["moves"], sfps, vid["dur"])
+            if ev.get("cursor_kinds"): cur_kinds = cursor_kind_track(ev["cursor_kinds"], sfps, vid["dur"])
         if clickfx: clicks = [(t, x, y) for t, x, y in ev["clicks"]]
         if keys:   # keystroke caption = ONE bottom-center window per burst whose text grows
             callouts += [{"t0": s2o(g["t0"]), "t1": s2o(g["t1"]), "anchor": "bottom", "size": 0.055,
@@ -456,7 +536,8 @@ def render(src, regions, out_path, *, aspect="16:9", fit="cover", events=None, f
                 ox = (cur_xs[min(cur_src_idx, len(cur_xs)-1)] - x0) * sx + pox
                 oy = (cur_ys[min(cur_src_idx, len(cur_ys)-1)] - y0) * sy + poy
                 if -50 < ox < Cw+50 and -50 < oy < Ch+50:
-                    spr, hx, hy = cursor_sprite()   # crisp fixed-size cursor (no balloon)
+                    kind = cur_kinds[min(cur_src_idx, len(cur_kinds)-1)] if cur_kinds else "default"
+                    spr, hx, hy = kind_sprite(kind, cur_h)   # crisp fixed-size cursor (no balloon)
                     img.paste(spr, (int(round(ox-hx)), int(round(oy-hy))), spr)
             # composite: drop the Cw×Ch content onto the backdrop (rounded + shadow). The
             # content rect already carries the right aspect — NO second resize/squash here.
@@ -590,6 +671,8 @@ if __name__ == "__main__":
     ap.add_argument("--curve", default="smooth", choices=["smooth", "snappy", "linear"],
                     help="camera easing curve: smooth=smootherstep ease-in-out (default), snappy=steeper, linear=constant-velocity (mechanical)")
     ap.add_argument("--cursor", action="store_true"); ap.add_argument("--clickfx", action="store_true")
+    ap.add_argument("--cursor-scale", type=float, default=1.0,
+                    help="cursor size multiplier (1.0 = 38px tall at 1280 wide)")
     ap.add_argument("--keys", action="store_true", help="keystroke chips (auto bottom callouts; needs --events)")
     ap.add_argument("--speedup", action="store_true"); ap.add_argument("--idle-speed", type=float, default=8.0)
     ap.add_argument("--speed-segments")
@@ -621,5 +704,5 @@ if __name__ == "__main__":
     r = render(a.src, regions, a.out, aspect=a.aspect, fit=a.fit, events=a.events, fps=a.fps,
                ramp=a.ramp, curve=a.curve, cursor=a.cursor, clickfx=a.clickfx, keys=a.keys, segs=segs,
                bg=a.bg, pad=a.pad, radius=a.radius, shadow=not a.no_shadow, callouts=callouts, progress_file=a.progress_file,
-               metadata=not a.no_metadata)
+               metadata=not a.no_metadata, cursor_scale=a.cursor_scale)
     print(json.dumps(r))

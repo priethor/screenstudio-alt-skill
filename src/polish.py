@@ -88,8 +88,14 @@ def load_events(path, vid):
     zoom_regions can frame the actual element (the search bar, the clicked image)
     instead of just the cursor point. `click_bbox` is aligned 1:1 with `clicks`
     (None where the click had no element); `key_bbox` is the element being typed into
-    (carried on the first key that has one), used for the typing-burst zoom."""
+    (carried on the first key that has one), used for the typing-burst zoom.
+
+    Cursor type: a `move` event may carry an optional `cursor` — a CSS cursor name
+    (`default`, `pointer`, `text`, `col-resize`...). The real logger can't read another
+    app's cursor, but logs written by browser automation can fill it from
+    getComputedStyle(); `cursor_kinds` lists (t, name) for render.py's sprite choice."""
     header, moves, clicks, click_bbox, keys, key_bbox = None, [], [], [], [], None
+    kinds = []   # (t, css cursor name) from optional `cursor` on move events
     with open(path) as f:
         for line in f:
             line = line.strip()
@@ -97,7 +103,9 @@ def load_events(path, vid):
             e = json.loads(line)
             if e.get("type") == "header": header = e; continue
             t = e.get("t")
-            if e.get("type") == "move":  moves.append((t, e["x"], e["y"]))
+            if e.get("type") == "move":
+                moves.append((t, e["x"], e["y"]))
+                if e.get("cursor"): kinds.append((t, str(e["cursor"])))
             elif e.get("type") == "down":
                 clicks.append((t, e["x"], e["y"]))
                 click_bbox.append(e.get("bbox"))
@@ -115,7 +123,7 @@ def load_events(path, vid):
     clicks = [(t, x*sx, y*sy) for t,x,y in clicks]
     click_bbox = [scale_bbox(b) for b in click_bbox]
     return {"moves":moves, "clicks":clicks, "click_bbox":click_bbox,
-            "keys":keys, "key_bbox":scale_bbox(key_bbox)}
+            "keys":keys, "key_bbox":scale_bbox(key_bbox), "cursor_kinds":kinds}
 
 # ---------------------------------------------------------------- speedup
 def detect_freezes(path, noise=0.003, min_d=1.5):
