@@ -152,6 +152,44 @@ Timestamps relative to the start of the test line up with the video. Convert the
 mp4 (`ffmpeg -i in.webm -r 25 src.mp4`) before rendering, and trim the page load with
 `--trim-in`.
 
+What made the difference in practice:
+
+- **Helpers.** Three small ones carry the whole script: `travel(x, y, ms)` moves the mouse
+  along an eased path and logs a `move` per step; `clickOn(locator, action)` travels to the
+  element's center, pauses briefly, logs `down` with its `bbox`, runs the action and logs
+  `up`; `rest(ms)` holds so loading stays visible. Log each `move` *after*
+  `page.mouse.move`, so the cursor type read for it is the one under the pointer.
+- **Cursor type.** Resolve it with `page.evaluate` + `document.elementFromPoint`, and descend
+  into same-origin iframes (editor canvases live in one) by subtracting the iframe's rect.
+  `auto` means the browser decides: report `text` over inputs, textareas and
+  contenteditable, `default` elsewhere. Read it again ~120 ms after each click, so a menu or
+  popover opening under the pointer updates the type.
+- **Seed through the API, not the UI.** Create the data the demo needs before recording
+  starts, so the video opens on the interesting state.
+- **Mark the start.** Write the time the first real frame is ready (after the page settles)
+  and pass it as `--trim-in`.
+- **Regions use recording time.** Read click times from `events.jsonl` and write regions
+  around each group of clicks. Merge groups less than ~2 s apart into one region; zooming
+  out and back in between them reads as a jolt.
+- **Review.** Before showing it, pull 4-8 frames at the key moments into a contact sheet
+  and check framing, cursor type and captions. Stills don't show motion, so still ask for
+  the video-model critique below; when no video model is available, say it was skipped.
+- **Clean up.** The spec, its artifacts and any test environment started for it are
+  throwaway; remove them once the video is rendered.
+
+## Changing this skill
+
+- Checks for the render options: `python3 test/test_cursor.py` (no extra dependencies).
+  Validate visual changes on the fixture (`test/make-fixture.py`) before real footage.
+- Commit straight to `main`. The installed plugin only updates when
+  `.claude-plugin/plugin.json`'s `version` changes: bump it, push, then
+  `claude plugin marketplace update screenstudio-alt` and
+  `claude plugin update screenstudio-alt@screenstudio-alt` (takes effect in new sessions).
+- Commands in this file run in zsh, which doesn't split `$VARS` into words: write flags out
+  in full instead of collecting them in a variable.
+- Never commit Screen Studio's or Apple's artwork; read it from the local apps at render
+  time (as `src/screenstudio-cursors.py` and `--wallpaper` do).
+
 ## Gotchas (learned the hard way, kept here so they're not relearned)
 
 - ffmpeg CANNOT do animated `scale=eval=frame` → `crop` (link reinit wedges crop's
@@ -162,7 +200,10 @@ mp4 (`ffmpeg -i in.webm -r 25 src.mp4`) before rendering, and trim the page load
   events.jsonl — validate any change against it before trusting real footage.
 - Do NOT use Playwright `recordVideo` to capture the studio demo — its VFR→CFR
   conversion judders on the auto-zoom (a frozen frame wedged mid-motion); use
-  `test/record-demo.js` instead.
+  `test/record-demo.js` instead. This is about
+  capturing the studio's own animated zoom. Recording an app with Playwright's video for a
+  scripted demo is fine: that footage has no camera moves, and `render.py` adds them later
+  on a steady clock.
 
 ## Recording the demo
 
