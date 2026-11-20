@@ -103,6 +103,12 @@ default `0.06`), with `--radius` corners and a drop shadow (`--no-shadow` drops 
   fill it from `getComputedStyle()` on the hovered element. A type that lasts under 200ms
   keeps the previous one, so crossing the gaps between buttons doesn't flicker between hand
   and arrow (Screen Studio's "optimize original cursor types").
+- **`--cursor-set DIR`** draws cursors from images instead: `<kind>.png` for `default`,
+  `pointer`, `text`, `ew` or `ns`, plus `hotspots.json` with each hotspot in image pixels.
+  The arrow's opaque height sets the scale for the whole set; kinds without an image keep
+  the drawn ones. `src/screenstudio-cursors.py DIR` fills a folder from a local Screen
+  Studio install (its macOS set; the I-beam stays drawn). Those images are Screen Studio's,
+  so they're read from your copy of the app and never committed here.
 - **`--cursor-zoom`** grows the cursor with the camera, as if it were part of the screen
   (Screen Studio draws it that way). Without it the cursor keeps the same size on zooms.
 - **`--cursor-scale`** (default `1.0`, 38px tall at 1280 wide) makes every sprite bigger or

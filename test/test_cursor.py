@@ -61,6 +61,24 @@ def test_kind_sprites_have_hotspots_inside():
         assert 0 <= hx < spr.width and 0 <= hy < spr.height, (kind, hx, hy, spr.size)
         assert spr.getbbox() is not None, kind
 
+def test_cursor_set_replaces_drawn_sprites_and_keeps_the_rest():
+    from PIL import Image
+    folder = tempfile.mkdtemp()
+    arrow = Image.new("RGBA", (200, 200), (0, 0, 0, 0)); arrow.paste((0, 0, 0, 255), (50, 50, 100, 150))
+    hand = Image.new("RGBA", (200, 200), (0, 0, 0, 0)); hand.paste((255, 0, 0, 255), (60, 40, 140, 140))
+    arrow.save(os.path.join(folder, "default.png")); hand.save(os.path.join(folder, "pointer.png"))
+    json.dump({"default": [50, 50], "pointer": [100, 40]}, open(os.path.join(folder, "hotspots.json"), "w"))
+    try:
+        render.use_cursor_set(folder)
+        spr, hx, hy = render.kind_sprite("default", 38)
+        assert spr.height == 38 and abs(hx) < 1e-6 and abs(hy) < 1e-6   # arrow body sets the scale
+        spr, hx, hy = render.kind_sprite("pointer", 38)
+        assert spr.getpixel((spr.width // 2, spr.height // 2))[0] > 200   # the red hand image
+        assert abs(hx - 40 * 0.38) < 0.5 and abs(hy) < 1e-6
+        assert render.kind_sprite("text", 38)[0].getbbox() is not None    # falls back to drawn
+    finally:
+        render.use_cursor_set(None)
+
 def test_cursor_scale_grows_the_sprite():
     small = render.kind_sprite("pointer", 38)[0]
     big = render.kind_sprite("pointer", 57)[0]

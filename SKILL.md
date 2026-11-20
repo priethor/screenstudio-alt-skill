@@ -77,12 +77,15 @@ spring and hides when it stops. No click ripple (`--clickfx` off), no click soun
 ```bash
 # once per machine: Pillow can't read HEIC
 sips -s format png "/System/Library/Desktop Pictures/.thumbnails/Ventura Graphic.heic" --out ~/.cache/demo-wallpaper.png
+# once per machine, needs Screen Studio installed: its macOS cursor set (hand, arrow, resize)
+python3 src/screenstudio-cursors.py ~/.cache/screenstudio-cursors
 ```
 
 Style flags, used in every render below:
 
 ```bash
---fps 60 --cursor --cursor-scale 1.0 --cursor-zoom --click-press --cursor-idle-fade 2.5 \
+--fps 60 --cursor --cursor-scale 1.0 --cursor-zoom \
+  --cursor-set "$HOME/.cache/screenstudio-cursors" --click-press --cursor-idle-fade 2.5 \
   --cursor-spring 470,70,3 --bg-image "$HOME/.cache/demo-wallpaper.png" --bg-blur 40 \
   --pad 0.025 --radius 12 --width 1920
 ```
@@ -104,7 +107,8 @@ Slow enough to follow one idea at a time.
 
 ```bash
 python3 src/render.py src.mp4 --regions regions.json --events events.jsonl --out demo.mp4 \
-  --fps 60 --cursor --cursor-scale 1.0 --cursor-zoom --click-press --cursor-idle-fade 2.5 \
+  --fps 60 --cursor --cursor-scale 1.0 --cursor-zoom \
+  --cursor-set "$HOME/.cache/screenstudio-cursors" --click-press --cursor-idle-fade 2.5 \
   --cursor-spring 470,70,3 --bg-image "$HOME/.cache/demo-wallpaper.png" --bg-blur 40 \
   --pad 0.025 --radius 12 --width 1920
 ```
@@ -122,7 +126,8 @@ Fast and dense, closer to a product video.
 ```bash
 python3 src/render.py src.mp4 --regions regions.json --events events.jsonl --out walkthrough.mp4 \
   --speed-segments '[{"t0":0,"t1":DUR,"speed":2}]' \
-  --fps 60 --cursor --cursor-scale 1.0 --cursor-zoom --click-press --cursor-idle-fade 2.5 \
+  --fps 60 --cursor --cursor-scale 1.0 --cursor-zoom \
+  --cursor-set "$HOME/.cache/screenstudio-cursors" --click-press --cursor-idle-fade 2.5 \
   --cursor-spring 470,70,3 --bg-image "$HOME/.cache/demo-wallpaper.png" --bg-blur 40 \
   --pad 0.025 --radius 12 --width 1920
 ```

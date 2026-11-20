@@ -87,12 +87,42 @@ _SHAPES = {   # kind: (draw fn, box width, box height, hotspot, fill, outline) i
     "ns":      (lambda d,u,ox,oy: _resize(d,u,ox,oy,True), 0.50, 0.90, (0.25, 0.45), (22,22,24), (255,255,255)),
 }
 _KIND_CACHE = {}
+_CURSOR_SET = {}   # kind -> (full-size RGBA image, hotspot x, hotspot y), from --cursor-set
+CURSOR_KINDS = ("default", "pointer", "text", "ew", "ns")
+
+def use_cursor_set(folder):
+    """Load a cursor image set: `<kind>.png` for any of CURSOR_KINDS plus `hotspots.json`
+    ({"pointer": [x, y], ...} in image pixels). Kinds without an image keep the drawn
+    sprites. Pass None to go back to the drawn set."""
+    _CURSOR_SET.clear(); _KIND_CACHE.clear()
+    if not folder: return
+    hotspots = json.load(open(os.path.join(folder, "hotspots.json")))
+    for kind in CURSOR_KINDS:
+        path = os.path.join(folder, kind + ".png")
+        if kind in hotspots and os.path.isfile(path):
+            _CURSOR_SET[kind] = (Image.open(path).convert("RGBA"), *hotspots[kind])
+
+def _set_sprite(kind, h):
+    """A cursor from the loaded image set, scaled so the arrow's opaque body is `h` tall
+    and every other type keeps its size relative to it."""
+    img, hx, hy = _CURSOR_SET[kind]
+    ref = _CURSOR_SET.get("default", _CURSOR_SET[kind])[0]
+    rows = np.where(np.asarray(ref.getchannel("A")).max(axis=1) > 230)[0]
+    s = h / (rows[-1] - rows[0] + 1)
+    box = img.getbbox()
+    crop = img.crop(box)
+    spr = crop.resize((max(1, round(crop.width*s)), max(1, round(crop.height*s))), Image.LANCZOS)
+    return spr, (hx - box[0]) * s, (hy - box[1]) * s
+
 def kind_sprite(kind, h=38):
     """Sprite for a cursor family: (RGBA sprite, hotspot_x, hotspot_y). Same outline,
     shadow and supersampling as the arrow, so every type reads as one set."""
-    if kind not in _SHAPES: return cursor_sprite(h)
     key = (kind, h)
     if key in _KIND_CACHE: return _KIND_CACHE[key]
+    if kind in _CURSOR_SET:
+        _KIND_CACHE[key] = _set_sprite(kind, h)
+        return _KIND_CACHE[key]
+    if kind not in _SHAPES: return cursor_sprite(h)
     draw, bw, bh, hot, fill, outline = _SHAPES[kind]
     ss = 4; u = h * ss; pad = int(0.22*u)
     sz = (int(bw*u)+2*pad, int(bh*u)+2*pad)
@@ -451,7 +481,8 @@ def render(src, regions, out_path, *, aspect="16:9", fit="cover", events=None, f
            ramp=0.5, curve="smooth", cursor=False, clickfx=False, keys=False, segs=None,
            bg="none", pad=0.06, radius=18, shadow=True, callouts=None, progress_file=None,
            metadata=True, cursor_scale=1.0, click_press=False, cursor_idle_fade=0.0,
-           cursor_spring=None, bg_image=None, bg_blur=0.0, width=None, cursor_zoom=False):
+           cursor_spring=None, bg_image=None, bg_blur=0.0, width=None, cursor_zoom=False,
+           cursor_set=None):
     vid = polish.probe(src)
     Sw, Sh, sfps = vid["w"], vid["h"], vid["fps"]
     o2s, s2o, out_dur = time_maps(segs) if segs else (lambda t: t, lambda t: t, vid["dur"])
@@ -519,6 +550,7 @@ def render(src, regions, out_path, *, aspect="16:9", fit="cover", events=None, f
 
     cur_xs = cur_ys = None; clicks = []; cur_kinds = None; cur_press = None; cur_alpha = None
     cur_h = max(8, int(round(38 * cursor_scale * ui)))
+    use_cursor_set(cursor_set)
     callouts = list(callouts or [])
     if (cursor or clickfx or keys) and events:
         ev = polish.load_events(events, vid)
@@ -773,6 +805,9 @@ if __name__ == "__main__":
                     help="shrink the cursor while the mouse is down and spring it back on release")
     ap.add_argument("--cursor-idle-fade", type=float, default=0.0,
                     help="fade the cursor out after this many seconds without moving (0 = always visible)")
+    ap.add_argument("--cursor-set", metavar="DIR",
+                    help="cursor images to draw instead of the built-in ones: <kind>.png for "
+                         "default/pointer/text/ew/ns plus hotspots.json")
     ap.add_argument("--cursor-zoom", action="store_true",
                     help="scale the cursor with the camera zoom, as if it were part of the screen")
     ap.add_argument("--cursor-spring", metavar="K,C,M",
@@ -827,5 +862,6 @@ if __name__ == "__main__":
                bg=a.bg, pad=a.pad, radius=a.radius, shadow=not a.no_shadow, callouts=callouts, progress_file=a.progress_file,
                metadata=not a.no_metadata, cursor_scale=a.cursor_scale, click_press=a.click_press,
                cursor_idle_fade=a.cursor_idle_fade, cursor_spring=spring,
-               bg_image=a.bg_image, bg_blur=a.bg_blur, width=a.width, cursor_zoom=a.cursor_zoom)
+               bg_image=a.bg_image, bg_blur=a.bg_blur, width=a.width, cursor_zoom=a.cursor_zoom,
+               cursor_set=a.cursor_set)
     print(json.dumps(r))
