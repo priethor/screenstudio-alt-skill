@@ -1,6 +1,6 @@
 ---
 name: screenstudio-alt
-description: Screen-Studio-style post-production for screen recordings, headless — auto speed-up of idle, auto-zoom on click clusters, keystroke overlay chips, smoothed synthetic cursor, and 9:16 vertical export that follows the action. Use when polishing a screen recording / demo video for sharing, when the user mentions Screen Studio, auto-zoom, idle speed-up, or vertical/social video from a screen capture, and for any social-facing demo (vertical output is the default for those).
+description: Screen-Studio-style post-production for screen recordings, headless — PR demo videos, release highlight reels and long product walkthroughs, auto speed-up of idle, auto-zoom on click clusters, keystroke overlay chips, smoothed synthetic cursor, and 9:16 vertical export that follows the action. Use when polishing a screen recording / demo video for sharing, when the user mentions Screen Studio, auto-zoom, idle speed-up, or vertical/social video from a screen capture, and for any social-facing demo (vertical output is the default for those).
 author: Conner K Ward
 ---
 
@@ -61,6 +61,82 @@ existing dailies corpus.
 `screencast.sh --demo` (screencast skill) does the whole chain: starts the event
 logger, records, then polishes + emits the 9:16 vertical automatically. Vertical
 is the DEFAULT for social-facing demos.
+
+## Demo modes and house style
+
+Every demo, whatever the project, uses the same look, then one of two modes. Ask which mode
+only when the request doesn't make it clear: a PR demo or "video de muestra" is a highlight,
+a release summary is several highlights in a row, a tour of many features is a walkthrough.
+
+### House style (always on)
+
+Blurred macOS wallpaper behind the window with a thin margin, rounded corners, shadow, and a
+1.5x macOS cursor with real cursor types that squashes on click, moves on a spring and hides
+when it stops. No click ripple (`--clickfx` off), no click sound.
+
+```bash
+# once per machine: Pillow can't read HEIC
+sips -s format png "/System/Library/Desktop Pictures/.thumbnails/Ventura Graphic.heic" --out ~/.cache/demo-wallpaper.png
+```
+
+Style flags, used in every render below:
+
+```bash
+--fps 60 --cursor --cursor-scale 1.5 --click-press --cursor-idle-fade 2.5 \
+  --cursor-spring 470,70,3 --bg-image "$HOME/.cache/demo-wallpaper.png" --bg-blur 40 \
+  --pad 0.025 --radius 12
+```
+
+The pointer must be visible with its clicks; a recording without them gets redone.
+
+### Highlight (PR demos, release highlights)
+
+Slow enough to follow one idea at a time.
+
+- Real speed, no `--speedup`: pauses stay so the viewer sees things load and update. Cut dead
+  time only at the ends (`--trim-in`/`--trim-out`) or by keeping the script tight.
+- One action per step, then hold ~1-1.5 s on the result before the next move.
+- Moderate zoom, hand-written regions at ~1.4-1.8x on the area being changed (auto-zoom tends
+  to land at 2.6x and on sidebar clicks). Pull back out between unrelated steps.
+- `--keys` only when the typed text matters (a formula, a name the viewer must read).
+- 15-45 s per clip. For a release summary, render each highlight separately with the same
+  style and concatenate them.
+
+```bash
+python3 src/render.py src.mp4 --regions regions.json --events events.jsonl --out demo.mp4 \
+  --fps 60 --cursor --cursor-scale 1.5 --click-press --cursor-idle-fade 2.5 \
+  --cursor-spring 470,70,3 --bg-image "$HOME/.cache/demo-wallpaper.png" --bg-blur 40 \
+  --pad 0.025 --radius 12
+```
+
+### Walkthrough (long tours of many features)
+
+Fast and dense, closer to a product video.
+
+- The whole timeline at 2x: `--speed-segments '[{"t0":0,"t1":DUR,"speed":2}]'` with the
+  source duration as `DUR`.
+- Camera zoomed most of the time (~1.5-2x), following groups of clicks; short holds. Open on a
+  zoomed hero shot, then pull out.
+- No `--keys`: the chips overwhelm at this pace.
+
+```bash
+python3 src/render.py src.mp4 --regions regions.json --events events.jsonl --out walkthrough.mp4 \
+  --speed-segments '[{"t0":0,"t1":DUR,"speed":2}]' \
+  --fps 60 --cursor --cursor-scale 1.5 --click-press --cursor-idle-fade 2.5 \
+  --cursor-spring 470,70,3 --bg-image "$HOME/.cache/demo-wallpaper.png" --bg-blur 40 \
+  --pad 0.025 --radius 12
+```
+
+### Scripted browser demos
+
+`events-log` reads OS input, so a browser driven by an agent leaves it empty. Instead, drive
+the flow with a throwaway Playwright script (`video: { mode: 'on', size }`, 1920x1080) and
+write `events.jsonl` from the same script: header `{type:'header',display:{w,h},scale:1}`,
+eased `move` events at ~60 Hz with `cursor` set from `getComputedStyle(el).cursor` of the
+hovered element, `down`/`up` with the element's `bbox`, and `key` events while typing.
+Timestamps relative to the start of the test line up with the video. Convert the webm to
+mp4 (`ffmpeg -i in.webm -r 25 src.mp4`) before rendering, and trim the page load with
+`--trim-in`.
 
 ## Gotchas (learned the hard way, kept here so they're not relearned)
 
