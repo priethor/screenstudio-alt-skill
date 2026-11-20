@@ -71,8 +71,8 @@ a release summary is several highlights in a row, a tour of many features is a w
 ### House style (always on)
 
 Blurred macOS wallpaper behind the window with a thin margin, rounded corners, shadow, and a
-1.5x macOS cursor with real cursor types that squashes on click, moves on a spring and hides
-when it stops. No click ripple (`--clickfx` off), no click sound.
+macOS cursor with real cursor types that grows with the zoom, squashes on click, moves on a
+spring and hides when it stops. No click ripple (`--clickfx` off), no click sound.
 
 ```bash
 # once per machine: Pillow can't read HEIC
@@ -82,7 +82,7 @@ sips -s format png "/System/Library/Desktop Pictures/.thumbnails/Ventura Graphic
 Style flags, used in every render below:
 
 ```bash
---fps 60 --cursor --cursor-scale 1.5 --click-press --cursor-idle-fade 2.5 \
+--fps 60 --cursor --cursor-scale 1.0 --cursor-zoom --click-press --cursor-idle-fade 2.5 \
   --cursor-spring 470,70,3 --bg-image "$HOME/.cache/demo-wallpaper.png" --bg-blur 40 \
   --pad 0.025 --radius 12 --width 1920
 ```
@@ -104,7 +104,7 @@ Slow enough to follow one idea at a time.
 
 ```bash
 python3 src/render.py src.mp4 --regions regions.json --events events.jsonl --out demo.mp4 \
-  --fps 60 --cursor --cursor-scale 1.5 --click-press --cursor-idle-fade 2.5 \
+  --fps 60 --cursor --cursor-scale 1.0 --cursor-zoom --click-press --cursor-idle-fade 2.5 \
   --cursor-spring 470,70,3 --bg-image "$HOME/.cache/demo-wallpaper.png" --bg-blur 40 \
   --pad 0.025 --radius 12 --width 1920
 ```
@@ -122,7 +122,7 @@ Fast and dense, closer to a product video.
 ```bash
 python3 src/render.py src.mp4 --regions regions.json --events events.jsonl --out walkthrough.mp4 \
   --speed-segments '[{"t0":0,"t1":DUR,"speed":2}]' \
-  --fps 60 --cursor --cursor-scale 1.5 --click-press --cursor-idle-fade 2.5 \
+  --fps 60 --cursor --cursor-scale 1.0 --cursor-zoom --click-press --cursor-idle-fade 2.5 \
   --cursor-spring 470,70,3 --bg-image "$HOME/.cache/demo-wallpaper.png" --bg-blur 40 \
   --pad 0.025 --radius 12 --width 1920
 ```

@@ -44,6 +44,17 @@ def test_cursor_kind_track_holds_latest_sample():
     assert track[10] == "pointer" and track[19] == "pointer"
     assert track[20] == "ew" and track[-1] == "ew"
 
+def test_cursor_kind_track_ignores_brief_changes():
+    # pointer, a 50ms arrow while crossing a gap, pointer again, then a long arrow
+    kinds = [(0.0, "pointer"), (1.0, "default"), (1.05, "pointer"), (2.0, "default")]
+    track = render.cursor_kind_track(kinds, 60, 3.0)
+    assert track[int(1.02 * 60)] == "pointer"
+    assert track[int(2.5 * 60)] == "default"
+
+def test_cursor_kind_track_keeps_a_held_change():
+    track = render.cursor_kind_track([(0.0, "default"), (1.0, "pointer")], 60, 2.0)
+    assert track[int(1.1 * 60)] == "pointer"
+
 def test_kind_sprites_have_hotspots_inside():
     for kind in ("default", "pointer", "text", "ew", "ns"):
         spr, hx, hy = render.kind_sprite(kind, 38)
@@ -180,6 +191,50 @@ def test_render_uses_the_image_behind_the_padded_frame():
     assert im.getpixel((3, h // 2))[0] > 180 and im.getpixel((3, h // 2))[2] < 80    # red margin left
     assert im.getpixel((w - 4, h // 2))[2] > 180                                      # blue margin right
     assert min(im.getpixel((w // 2, h // 2))) > 220                                   # white content
+
+def _cursor_height(path):
+    """Height of the dark cursor outline in the first frame of a white render."""
+    import subprocess
+    from PIL import Image
+    png = path + ".png"
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", "1.0", "-i", path, "-frames:v", "1", png], check=True)
+    im = Image.open(png).convert("L").point(lambda v: 255 if v < 100 else 0)
+    box = im.getbbox()
+    return box[3] - box[1]
+
+def test_cursor_zoom_grows_the_cursor_with_the_camera():
+    import subprocess
+    tmp = tempfile.mkdtemp()
+    src = os.path.join(tmp, "src.mp4")
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "color=white:s=1280x720:d=2:r=10",
+                    "-pix_fmt", "yuv420p", src], check=True)
+    events = _events([HEADER] + [{"t": i / 10, "type": "move", "x": 640, "y": 360} for i in range(20)])
+    regions = [{"t0": 0.0, "t1": 2.0, "z": 2.0, "cx": 640, "cy": 360}]
+    sizes = {}
+    for flag in (False, True):
+        out = os.path.join(tmp, f"out{int(flag)}.mp4")
+        render.render(src, regions, out, fps=10, events=events, cursor=True, cursor_zoom=flag)
+        sizes[flag] = _cursor_height(out)
+    assert sizes[True] > sizes[False] * 1.6, sizes
+
+def test_cursor_moves_on_every_output_frame_of_a_low_fps_source():
+    import subprocess
+    from PIL import Image
+    tmp = tempfile.mkdtemp()
+    src = os.path.join(tmp, "src.mp4"); out = os.path.join(tmp, "out.mp4")
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "color=white:s=1280x720:d=2:r=25",
+                    "-pix_fmt", "yuv420p", src], check=True)
+    events = _events([HEADER] + [{"t": i / 100, "type": "move", "x": 100 + i * 5, "y": 360}
+                                 for i in range(200)])
+    render.render(src, [], out, fps=60, events=events, cursor=True)
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", "1.0", "-i", out, "-frames:v", "12",
+                    os.path.join(tmp, "f%02d.png")], check=True)
+    xs = []
+    for i in range(1, 13):
+        im = Image.open(os.path.join(tmp, f"f{i:02d}.png")).convert("L").point(lambda v: 255 if v < 100 else 0)
+        xs.append(im.getbbox()[0])
+    steps = [b - a for a, b in zip(xs, xs[1:])]
+    assert all(st > 0 for st in steps), xs   # tied to 25fps source frames, some steps were 0
 
 def test_render_width_sets_the_output_size():
     import subprocess

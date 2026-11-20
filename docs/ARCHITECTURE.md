@@ -100,7 +100,11 @@ default `0.06`), with `--radius` corners and a drop shadow (`--no-shadow` drops 
   matching sprite: hand, I-beam, or resize arrows; anything else falls back to the arrow.
   The sprites are drawn in code in the macOS style, so no Apple artwork ships with the tool.
   `events-log` can't read another app's cursor, but logs written by browser automation can
-  fill it from `getComputedStyle()` on the hovered element.
+  fill it from `getComputedStyle()` on the hovered element. A type that lasts under 200ms
+  keeps the previous one, so crossing the gaps between buttons doesn't flicker between hand
+  and arrow (Screen Studio's "optimize original cursor types").
+- **`--cursor-zoom`** grows the cursor with the camera, as if it were part of the screen
+  (Screen Studio draws it that way). Without it the cursor keeps the same size on zooms.
 - **`--cursor-scale`** (default `1.0`, 38px tall at 1280 wide) makes every sprite bigger or
   smaller; Screen Studio's own default reads closer to `1.5`.
 - **`--click-press`** shrinks the pointer while the mouse is down and springs it back on

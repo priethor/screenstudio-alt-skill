@@ -156,9 +156,12 @@ def scaled_sprite(sprite, scale):
     w = max(1, int(round(spr.width * scale))); h = max(1, int(round(spr.height * scale)))
     return spr.resize((w, h), Image.LANCZOS), hx * scale, hy * scale
 
-def cursor_kind_track(kinds, fps, dur):
+def cursor_kind_track(kinds, fps, dur, min_hold=0.2):
     """Per-source-frame sprite family from (t, css name) samples: each frame takes the
-    latest sample at or before it; frames before the first sample use the arrow."""
+    latest sample at or before it; frames before the first sample use the arrow.
+    A type that lasts less than `min_hold` seconds keeps the previous one, so crossing
+    the gaps between buttons doesn't flicker between hand and arrow (Screen Studio's
+    "optimize original cursor types")."""
     n = int(dur*fps)+1; out = ["default"]*n
     if not kinds: return out
     ks = sorted(kinds); j = -1
@@ -166,6 +169,14 @@ def cursor_kind_track(kinds, fps, dur):
         t = i/fps
         while j+1 < len(ks) and ks[j+1][0] <= t: j += 1
         if j >= 0: out[i] = cursor_kind(ks[j][1])
+    hold = int(round(min_hold * fps))
+    i = 0
+    while i < n:
+        k = i
+        while k < n and out[k] == out[i]: k += 1
+        if i > 0 and k - i < hold:
+            out[i:k] = [out[i-1]] * (k - i)
+        i = k
     return out
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -440,7 +451,7 @@ def render(src, regions, out_path, *, aspect="16:9", fit="cover", events=None, f
            ramp=0.5, curve="smooth", cursor=False, clickfx=False, keys=False, segs=None,
            bg="none", pad=0.06, radius=18, shadow=True, callouts=None, progress_file=None,
            metadata=True, cursor_scale=1.0, click_press=False, cursor_idle_fade=0.0,
-           cursor_spring=None, bg_image=None, bg_blur=0.0, width=None):
+           cursor_spring=None, bg_image=None, bg_blur=0.0, width=None, cursor_zoom=False):
     vid = polish.probe(src)
     Sw, Sh, sfps = vid["w"], vid["h"], vid["fps"]
     o2s, s2o, out_dur = time_maps(segs) if segs else (lambda t: t, lambda t: t, vid["dur"])
@@ -512,13 +523,18 @@ def render(src, regions, out_path, *, aspect="16:9", fit="cover", events=None, f
     if (cursor or clickfx or keys) and events:
         ev = polish.load_events(events, vid)
         if cursor:
+            # cursor tracks run on their own clock, at least the output rate, and are read
+            # at each output frame's source time: tied to source frames, a 25fps recording
+            # would move the pointer in 25 steps a second inside a 60fps video.
+            cfps = max(sfps, fps)
             if cursor_spring:
-                cur_xs, cur_ys = polish.spring_positions(ev["moves"], sfps, vid["dur"], *cursor_spring)
+                cur_xs, cur_ys = polish.spring_positions(ev["moves"], cfps, vid["dur"], *cursor_spring)
             else:
-                cur_xs, cur_ys = polish.smooth_positions(ev["moves"], sfps, vid["dur"])
-            if ev.get("cursor_kinds"): cur_kinds = cursor_kind_track(ev["cursor_kinds"], sfps, vid["dur"])
-            if click_press: cur_press = press_scales(ev["clicks"], ev.get("ups", []), sfps, vid["dur"])
-            if cursor_idle_fade > 0: cur_alpha = idle_alphas(cur_xs, cur_ys, ev["clicks"], sfps, cursor_idle_fade)
+                cur_xs, cur_ys = polish.smooth_positions(ev["moves"], cfps, vid["dur"],
+                                                         sigma_frames=max(1, round(4 * cfps / sfps)))
+            if ev.get("cursor_kinds"): cur_kinds = cursor_kind_track(ev["cursor_kinds"], cfps, vid["dur"])
+            if click_press: cur_press = press_scales(ev["clicks"], ev.get("ups", []), cfps, vid["dur"])
+            if cursor_idle_fade > 0: cur_alpha = idle_alphas(cur_xs, cur_ys, ev["clicks"], cfps, cursor_idle_fade)
         if clickfx: clicks = [(t, x, y) for t, x, y in ev["clicks"]]
         if keys:   # keystroke caption = ONE bottom-center window per burst whose text grows
             callouts += [{"t0": s2o(g["t0"]), "t1": s2o(g["t1"]), "anchor": "bottom", "size": 0.055,
@@ -603,13 +619,16 @@ def render(src, regions, out_path, *, aspect="16:9", fit="cover", events=None, f
                     img = Image.alpha_composite(img.convert("RGBA"),
                           ov.filter(ImageFilter.GaussianBlur(0.6))).convert("RGB")
             if cur_xs is not None:
-                ox = (cur_xs[min(cur_src_idx, len(cur_xs)-1)] - x0) * sx + pox
-                oy = (cur_ys[min(cur_src_idx, len(cur_ys)-1)] - y0) * sy + poy
+                ci = min(int(round(src_t * cfps)), len(cur_xs)-1)
+                ox = (cur_xs[ci] - x0) * sx + pox
+                oy = (cur_ys[ci] - y0) * sy + poy
                 if -50 < ox < Cw+50 and -50 < oy < Ch+50:
-                    kind = cur_kinds[min(cur_src_idx, len(cur_kinds)-1)] if cur_kinds else "default"
-                    sprite = kind_sprite(kind, cur_h)   # crisp fixed-size cursor (no balloon)
-                    if cur_press: sprite = scaled_sprite(sprite, cur_press[min(cur_src_idx, len(cur_press)-1)])
-                    if cur_alpha: sprite = faded_sprite(sprite, cur_alpha[min(cur_src_idx, len(cur_alpha)-1)])
+                    kind = cur_kinds[min(ci, len(cur_kinds)-1)] if cur_kinds else "default"
+                    # fixed size by default; --cursor-zoom grows it with the camera like the
+                    # rest of the screen. Still drawn from vectors, so it stays crisp.
+                    sprite = kind_sprite(kind, int(round(cur_h * z)) if cursor_zoom else cur_h)
+                    if cur_press: sprite = scaled_sprite(sprite, cur_press[min(ci, len(cur_press)-1)])
+                    if cur_alpha: sprite = faded_sprite(sprite, cur_alpha[min(ci, len(cur_alpha)-1)])
                     if sprite is not None:
                         spr, hx, hy = sprite
                         img.paste(spr, (int(round(ox-hx)), int(round(oy-hy))), spr)
@@ -754,6 +773,8 @@ if __name__ == "__main__":
                     help="shrink the cursor while the mouse is down and spring it back on release")
     ap.add_argument("--cursor-idle-fade", type=float, default=0.0,
                     help="fade the cursor out after this many seconds without moving (0 = always visible)")
+    ap.add_argument("--cursor-zoom", action="store_true",
+                    help="scale the cursor with the camera zoom, as if it were part of the screen")
     ap.add_argument("--cursor-spring", metavar="K,C,M",
                     help="move the cursor with a damped spring (stiffness,damping,mass), e.g. 470,70,3; "
                          "default is the Gaussian smoothing")
@@ -806,5 +827,5 @@ if __name__ == "__main__":
                bg=a.bg, pad=a.pad, radius=a.radius, shadow=not a.no_shadow, callouts=callouts, progress_file=a.progress_file,
                metadata=not a.no_metadata, cursor_scale=a.cursor_scale, click_press=a.click_press,
                cursor_idle_fade=a.cursor_idle_fade, cursor_spring=spring,
-               bg_image=a.bg_image, bg_blur=a.bg_blur, width=a.width)
+               bg_image=a.bg_image, bg_blur=a.bg_blur, width=a.width, cursor_zoom=a.cursor_zoom)
     print(json.dumps(r))
