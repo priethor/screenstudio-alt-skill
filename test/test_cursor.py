@@ -351,6 +351,15 @@ def test_accent_paints_the_starred_run():
     px = np.asarray(img.convert("RGB")).reshape(-1, 3)
     assert ((px[:, 0] > 200) & (px[:, 1] < 80)).sum() > 20                # red text present
 
+def test_chained_regions_never_pull_out_between():
+    R = [{"o0": 1.0, "o1": 3.0, "z": 2.0, "cx": 100.0}, {"o0": 3.5, "o1": 6.0, "z": 1.6, "cx": 900.0}]
+    z = render.ease_traj(R, "z", 1.0, 10, 7.0, chain_gap=1.0)
+    assert min(z[25:40]) >= 1.6 - 1e-6                       # stays zoomed through the gap
+    z0 = render.ease_traj(R, "z", 1.0, 10, 7.0)
+    assert min(z0[25:40]) < 1.5                              # unchained: dips toward rest
+    cx = render.ease_traj(R, "cx", 500.0, 10, 7.0, chain_gap=1.0)
+    assert all(b >= a - 1e-6 for a, b in zip(cx[25:40], cx[26:41]))   # glides one way, no detour to centre
+
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
 
 if __name__ == "__main__":

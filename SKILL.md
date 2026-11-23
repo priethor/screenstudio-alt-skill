@@ -153,6 +153,13 @@ change the finish, not the pacing: a release highlight is still a highlight.
   palette, a whole panel) gets the zoom that makes it fill the frame with a little margin
   (~1.4-1.6x), or none at all. Never a token ~1.1-1.2x: it doesn't show anything new, it just
   makes the picture drift.
+- **One shot per chapter.** `--chain-gap 1.0` joins regions less than a second apart into one
+  continuous shot: the camera glides from one framing to the next instead of pulling out and
+  back in, which reads as pumping when it happens at every step. Pull out between chapters.
+- **Wide when a view opens, close when acting on it.** When a click opens a new view (a list,
+  a document, a section), hold the wide shot for a beat so the viewer sees where they are,
+  then zoom as the cursor heads for the button. Leave a pause in the script for that beat; a
+  cursor that leaves right away gives the wide shot only a few frames.
 - **Chapter captions.** One caption per section, held for the whole section (`dur` on the
   caption event), large and bold: `--caption-size 0.05 --caption-bold`. Wrap the second half
   in stars to paint it in the accent colour: `Done with it? *Archive it*`. `--accent` sets the

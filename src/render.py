@@ -407,7 +407,7 @@ def ease_pan(a):
     w = a ** _PAN_WARP
     return w * w * w * (w * (w * 6 - 15) + 10)    # smootherstep(a**0.65)
 
-def ease_traj(regions, key, rest, fps, dur, ramp=0.5, curve="smooth"):
+def ease_traj(regions, key, rest, fps, dur, ramp=0.5, curve="smooth", chain_gap=0.0):
     """Per-region eased trajectory → per-frame array. FULL ease-in-out (smootherstep
     by default) on every move — zoom rest→v, the in-region PAN v→v1, and v1→rest —
     so velocity is ~0 at both ends and peaks in the middle (no linear middle).
@@ -415,7 +415,10 @@ def ease_traj(regions, key, rest, fps, dur, ramp=0.5, curve="smooth"):
       curve : 'smooth' (smootherstep, default) | 'snappy' | 'linear'.
     A region with a pan target (key+'1') glides across its ENTIRE span with the same
     eased curve — not just a held sub-span — so the pan reads cinematic, not mechanical.
-    KEEP IN SYNC with studio.py easeTraj()."""
+    chain_gap: regions that start within this many seconds of the previous one's end are
+      chained: the camera glides straight from one framing to the next instead of easing
+      out to rest and back in, so a sequence of steps reads as one continuous shot.
+    KEEP IN SYNC with studio.py easeTraj() (chaining is render-only for now)."""
     n = int(round(dur * fps)) + 1
     arr = [rest] * n
     for r in sorted(regions, key=lambda r: r["o0"]):
@@ -441,6 +444,17 @@ def ease_traj(regions, key, rest, fps, dur, ramp=0.5, curve="smooth"):
                 arr[i] = b + (v1 - b) * ease_curve(a, curve)
             else:
                 arr[i] = v
+    if chain_gap > 0:
+        R = sorted(regions, key=lambda r: r["o0"])
+        for a_r, b_r in zip(R, R[1:]):
+            if b_r["o0"] - a_r["o1"] > chain_gap:
+                continue
+            ra = min(ramp, (a_r["o1"] - a_r["o0"]) / 2); rb = min(ramp, (b_r["o1"] - b_r["o0"]) / 2)
+            s0, s1 = a_r["o1"] - ra, b_r["o0"] + rb          # replaces a's ease-out, the gap and b's ease-in
+            va = a_r.get(key + "1", a_r[key]); vb = b_r[key]
+            for i in range(max(0, int(s0 * fps)), min(n, int(s1 * fps) + 1)):
+                a = (i / fps - s0) / (s1 - s0) if s1 > s0 else 1.0
+                arr[i] = va + (vb - va) * ease_curve(min(1.0, max(0.0, a)), curve)
     return arr
 
 # ---- text callouts (screen-fixed labels, background-aware, like keystroke chips) ----
@@ -609,7 +623,7 @@ def render(src, regions, out_path, *, aspect="16:9", fit="cover", events=None, f
            metadata=True, cursor_scale=1.0, click_press=False, cursor_idle_fade=0.0,
            cursor_spring=None, bg_image=None, bg_blur=0.0, width=None, cursor_zoom=False,
            cursor_set=None, accent="#ff7a45", caption_size=0.04, caption_bold=False,
-           intro=None, outro=None):
+           intro=None, outro=None, chain_gap=0.0):
     vid = polish.probe(src)
     Sw, Sh, sfps = vid["w"], vid["h"], vid["fps"]
     o2s, s2o, out_dur = time_maps(segs) if segs else (lambda t: t, lambda t: t, vid["dur"])
@@ -675,9 +689,9 @@ def render(src, regions, out_path, *, aspect="16:9", fit="cover", events=None, f
         R.append(d)
 
     # eased camera trajectories over the output timeline
-    zt  = ease_traj(R, "z",  1.0,  fps, out_dur, ramp, curve)
-    cxt = ease_traj(R, "cx", Sw/2, fps, out_dur, ramp, curve)
-    cyt = ease_traj(R, "cy", Sh/2, fps, out_dur, ramp, curve)
+    zt  = ease_traj(R, "z",  1.0,  fps, out_dur, ramp, curve, chain_gap)
+    cxt = ease_traj(R, "cx", Sw/2, fps, out_dur, ramp, curve, chain_gap)
+    cyt = ease_traj(R, "cy", Sh/2, fps, out_dur, ramp, curve, chain_gap)
     nframes = len(zt)
 
     cur_xs = cur_ys = None; clicks = []; cur_kinds = None; cur_press = None; cur_alpha = None
@@ -985,6 +999,8 @@ if __name__ == "__main__":
     ap.add_argument("--intro", metavar="JSON",
                     help='title card before the demo: {"title","subtitle","url","icon","dur","bg","fg"} (JSON or file)')
     ap.add_argument("--outro", metavar="JSON", help="title card after the demo; same keys as --intro")
+    ap.add_argument("--chain-gap", type=float, default=0.0,
+                    help="chain regions closer than this many seconds into one continuous shot (no pull-out between them)")
     ap.add_argument("--progress-file")
     ap.add_argument("--trim-in", type=float, default=0.0, help="source clip in-point (seconds); demo starts here")
     ap.add_argument("--trim-out", type=float, default=0.0, help="source clip out-point (seconds; 0 = source end); demo ends here")
@@ -1034,5 +1050,5 @@ if __name__ == "__main__":
                cursor_idle_fade=a.cursor_idle_fade, cursor_spring=spring,
                bg_image=a.bg_image, bg_blur=a.bg_blur, width=a.width, cursor_zoom=a.cursor_zoom,
                cursor_set=a.cursor_set, accent=a.accent, caption_size=a.caption_size,
-               caption_bold=a.caption_bold, intro=intro, outro=outro)
+               caption_bold=a.caption_bold, intro=intro, outro=outro, chain_gap=a.chain_gap)
     print(json.dumps(r))
