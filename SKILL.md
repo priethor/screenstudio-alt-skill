@@ -102,7 +102,8 @@ Slow enough to follow one idea at a time.
   time only at the ends (`--trim-in`/`--trim-out`) or by keeping the script tight.
 - One action per step, then hold ~1-1.5 s on the result before the next move.
 - Moderate zoom, hand-written regions at ~1.4-1.8x on the area being changed (auto-zoom tends
-  to land at 2.6x and on sidebar clicks), less for large surfaces. Pull back out between
+  to land at 2.6x and on sidebar clicks); a zoom either frames something or isn't there.
+  Pull back out between
   unrelated steps.
 - End on the wide shot. Once the camera pulls out to show the result (the page that opened,
   the list that changed), stay there; zooming back in for the last seconds reads as a twitch.
@@ -148,8 +149,10 @@ change the finish, not the pacing: a release highlight is still a highlight.
 
 - **Full bleed.** Leave out `--wallpaper`, `--bg`, `--pad` and `--radius`: the recording fills
   the frame edge to edge, no window on a backdrop. Size the zoom to what's being shown: small
-  targets (a menu, a button, a badge) take ~1.6-2x, while large surfaces (a modal, the command
-  palette, a whole panel) need ~1.1-1.2x or none. A zoom that crops a big surface only hides it.
+  targets (a menu, a button, a badge) take ~1.6-2x; a large surface (a modal, the command
+  palette, a whole panel) gets the zoom that makes it fill the frame with a little margin
+  (~1.4-1.6x), or none at all. Never a token ~1.1-1.2x: it doesn't show anything new, it just
+  makes the picture drift.
 - **Chapter captions.** One caption per section, held for the whole section (`dur` on the
   caption event), large and bold: `--caption-size 0.05 --caption-bold`. Wrap the second half
   in stars to paint it in the accent colour: `Done with it? *Archive it*`. `--accent` sets the

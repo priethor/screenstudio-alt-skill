@@ -1,7 +1,7 @@
 {
   "name": "screenstudio-alt",
   "description": "Free, open-source, headless alternative to Screen Studio: auto-zoom, idle speed-up, keystroke chips, smoothed cursor, text callouts, 9:16 vertical — from the CLI.",
-  "version": "0.7.2",
+  "version": "0.7.3",
   "author": {
     "name": "Conner K Ward",
     "url": "https://github.com/connerkward"
