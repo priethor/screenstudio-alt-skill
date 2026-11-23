@@ -138,6 +138,33 @@ python3 src/render.py src.mp4 --regions regions.json --events events.jsonl --out
   --pad 0.025 --radius 12 --width 1920
 ```
 
+### Release finish (social and launch posts)
+
+Options that work with either mode, for a clip that goes out with a release or on social. They
+change the finish, not the pacing: a release highlight is still a highlight.
+
+- **Full bleed.** Leave out `--wallpaper`, `--bg`, `--pad` and `--radius`: the recording fills
+  the frame edge to edge, no window on a backdrop. Keep the camera closer than usual (~2-2.5x)
+  and pan between areas with `cx1`/`cy1` instead of pulling back out between steps.
+- **Chapter captions.** One caption per section, held for the whole section (`dur` on the
+  caption event), large and bold: `--caption-size 0.05 --caption-bold`. Wrap the second half
+  in stars to paint it in the accent colour: `Done with it? *Archive it*`. `--accent` sets the
+  colour (`#ff7a45` by default; use the product's brand colour when it has one).
+- **Title cards.** `--intro` and `--outro` take `{"title", "subtitle", "url", "icon", "dur",
+  "bg", "fg"}` (inline JSON or a file) and crossfade into and out of the demo. The title takes
+  the same star markup: `Cortext *0.4*`. Defaults: 2.5 s, off-white background.
+
+```bash
+python3 src/render.py src.mp4 --regions regions.json --events events.jsonl --out release.mp4 \
+  --fps 60 --cursor --cursor-scale 1.0 --cursor-zoom \
+  --cursor-set "$HOME/.cache/screenstudio-cursors" --click-press --cursor-idle-fade 2.5 \
+  --cursor-spring 470,70,3 --width 1920 \
+  --caption-size 0.05 --caption-bold --accent "#2b6cee" \
+  --intro intro.json --outro outro.json
+```
+
+For the 9:16 version, render again with `--aspect 9:16` and regions framed for the narrow crop.
+
 ### Scripted browser demos
 
 `events-log` reads OS input, so a browser driven by an agent leaves it empty. Instead, drive

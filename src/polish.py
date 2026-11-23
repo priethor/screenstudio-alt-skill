@@ -22,16 +22,25 @@ import argparse, json, math, os, re, shutil, subprocess, sys, tempfile
 
 FONT = "/System/Library/Fonts/Helvetica.ttc"
 
-def load_font(size):
+def load_font(size, bold=False):
     """Sans-serif TrueType, portable across macOS / Linux / Windows. Falls back to
-    Pillow's bundled default (scalable in Pillow >= 10) so the pipeline runs anywhere."""
+    Pillow's bundled default (scalable in Pillow >= 10) so the pipeline runs anywhere.
+    `bold` picks the bold face (Helvetica.ttc index 1 on macOS)."""
     from PIL import ImageFont
-    for p in (FONT,                                                  # macOS
-              "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",     # Debian/Ubuntu
-              "/usr/share/fonts/dejavu/DejaVuSans.ttf",              # Fedora/Arch
-              "C:/Windows/Fonts/arial.ttf",                          # Windows
-              "DejaVuSans.ttf", "Arial.ttf"):                        # PATH/CWD fallback
-        try: return ImageFont.truetype(p, size)
+    if bold:
+        faces = ((FONT, 1),
+                 ("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 0),
+                 ("/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf", 0),
+                 ("C:/Windows/Fonts/arialbd.ttf", 0),
+                 ("DejaVuSans-Bold.ttf", 0), ("Arial Bold.ttf", 0))
+    else:
+        faces = ((FONT, 0),                                          # macOS
+                 ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 0), # Debian/Ubuntu
+                 ("/usr/share/fonts/dejavu/DejaVuSans.ttf", 0),      # Fedora/Arch
+                 ("C:/Windows/Fonts/arial.ttf", 0),                  # Windows
+                 ("DejaVuSans.ttf", 0), ("Arial.ttf", 0))            # PATH/CWD fallback
+    for p, idx in faces:
+        try: return ImageFont.truetype(p, size, index=idx)
         except OSError: continue
     try: return ImageFont.load_default(size)                         # Pillow >= 10
     except TypeError: return ImageFont.load_default()

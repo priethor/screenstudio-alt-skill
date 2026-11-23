@@ -448,19 +448,97 @@ def ease_traj(regions, key, rest, fps, dur, ramp=0.5, curve="smooth"):
 # output frame, so it stays put while the camera zooms/pans. The pill colour adapts to the
 # luminance behind it (dark pill on light bg, light pill on dark) — same trick as the click
 # ripple — so it's legible over any content. Anchors keep it at the edges, off the content.
-def _callout_measure(text, px):
-    font = polish.load_font(px)
-    bb = ImageDraw.Draw(Image.new("RGBA", (1, 1))).textbbox((0, 0), text, font=font)
+def accent_spans(text):
+    """Split `Spot something odd? *Ask why*` into [(text, accented)] runs. A `*` toggles
+    the accent; an unmatched one just accents the rest. No markup → one plain run."""
+    parts = text.split("*")
+    return [(s, i % 2 == 1) for i, s in enumerate(parts) if s]
+
+def plain_text(text):
+    return text.replace("*", "")
+
+def hex_rgb(h):
+    h = h.lstrip("#")
+    return tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
+
+def _callout_measure(text, px, bold=False, markup=True):
+    font = polish.load_font(px, bold)
+    shown = plain_text(text) if markup else text
+    bb = ImageDraw.Draw(Image.new("RGBA", (1, 1))).textbbox((0, 0), shown, font=font)
     padx, pady = int(px * 0.62), int(px * 0.42)
     return (bb[2]-bb[0]) + 2*padx, (bb[3]-bb[1]) + 2*pady, font, bb, padx, pady
 
-def _callout_render(text, bg_lum, font, bb, padx, pady, W, H):
+def draw_runs(d, x, y, text, font, fill, accent):
+    """Draw `text` left to right from (x, y), its *starred* runs in `accent`."""
+    for run, acc in accent_spans(text):
+        d.text((x, y), run, font=font, fill=accent if acc else fill)
+        x += d.textlength(run, font=font)
+
+def _callout_render(text, bg_lum, font, bb, padx, pady, W, H, accent=None, markup=True):
     img = Image.new("RGBA", (W, H), (0, 0, 0, 0)); d = ImageDraw.Draw(img)
     if bg_lum > 128: pill, txt = (18, 18, 22, 205), (255, 255, 255, 255)   # light bg → dark pill
     else:            pill, txt = (244, 244, 247, 216), (16, 16, 20, 255)   # dark bg → light pill
     d.rounded_rectangle([0, 0, W-1, H-1], radius=int(H*0.42), fill=pill)
-    d.text((padx - bb[0], pady - bb[1]), text, font=font, fill=txt)
+    if markup:
+        draw_runs(d, padx - bb[0], pady - bb[1], text, font, txt, (accent or txt[:3]) + (255,))
+    else:                                        # typed keys: a `*` is a keystroke, not markup
+        d.text((padx - bb[0], pady - bb[1]), text, font=font, fill=txt)
     return img
+
+# ---- title cards (intro / outro) --------------------------------------------
+# A card = {"title", "subtitle", "url", "icon", "dur", "bg", "fg"}: a still frame shown
+# before or after the demo, crossfading into it. `title` takes the same *accent* markup
+# as captions ("Cortext *0.4*"); `icon` is an image path drawn above the title.
+CARD_XFADE = 0.5   # seconds of crossfade between a card and the demo
+
+def render_card(spec, Tw, Th, accent):
+    bg = hex_rgb(spec.get("bg", "#f5f4f0")); fg = hex_rgb(spec.get("fg", "#16161a"))
+    muted = tuple(int(c * 0.55 + b * 0.45) for c, b in zip(fg, bg))
+    img = Image.new("RGB", (Tw, Th), bg); d = ImageDraw.Draw(img)
+    rows = []                                                  # (kind, payload, height)
+    if spec.get("icon"):
+        ico = Image.open(spec["icon"]).convert("RGBA"); ih = int(Th * 0.13)
+        ico = ico.resize((max(1, int(ico.width * ih / ico.height)), ih), Image.LANCZOS)
+        rows.append(("icon", ico, ih))
+    if spec.get("title"):
+        f = polish.load_font(int(Th * 0.085), True)
+        rows.append(("text", (spec["title"], f, fg), int(Th * 0.085)))
+    if spec.get("subtitle"):
+        f = polish.load_font(int(Th * 0.03))
+        rows.append(("text", (spec["subtitle"], f, muted), int(Th * 0.03)))
+    if spec.get("url"):
+        px = int(Th * 0.024)
+        rows.append(("pill", spec["url"], _callout_measure(spec["url"], px, True)[1]))
+    gap = int(Th * 0.035)
+    y = (Th - sum(h for _, _, h in rows) - gap * (len(rows) - 1)) // 2
+    for kind, payload, h in rows:
+        if kind == "icon":
+            img.paste(payload, ((Tw - payload.width) // 2, y), payload)
+        elif kind == "text":
+            text, f, col = payload
+            bb = d.textbbox((0, 0), plain_text(text), font=f)
+            draw_runs(d, (Tw - (bb[2] - bb[0])) // 2 - bb[0], y - bb[1], text, f, col, accent)
+        else:
+            W, H, f, bb, padx, pady = _callout_measure(payload, int(Th * 0.024), True)
+            pill = _callout_render(payload, 255, f, bb, padx, pady, W, H)
+            img.paste(pill, ((Tw - W) // 2, y), pill)
+        y += h + gap
+    return img
+
+def card_dur(spec):
+    return float(spec.get("dur", 2.5)) if spec else 0.0
+
+def write_card(raw_f, card, frame, dur, fps, into):
+    """Write `dur` seconds of a card. into=True: hold the card, then crossfade into
+    `frame` (the demo's first frame). into=False: crossfade from `frame` (the demo's last
+    frame) into the card, then hold it."""
+    n = int(round(dur * fps)); nx = min(n, int(round(CARD_XFADE * fps)))
+    for k in range(n):
+        if into:
+            a = 0.0 if k < n - nx else (k - (n - nx) + 1) / (nx + 1)   # 0 = card, 1 = frame
+        else:
+            a = 1.0 - (k + 1) / (nx + 1) if k < nx else 0.0
+        raw_f.write((card if a <= 0 else Image.blend(card, frame, a)).tobytes())
 
 def _callout_pos(anchor, W, H, Tw, Th, m):
     a = (anchor or "bottom").lower()
@@ -530,7 +608,8 @@ def render(src, regions, out_path, *, aspect="16:9", fit="cover", events=None, f
            bg="none", pad=0.06, radius=18, shadow=True, callouts=None, progress_file=None,
            metadata=True, cursor_scale=1.0, click_press=False, cursor_idle_fade=0.0,
            cursor_spring=None, bg_image=None, bg_blur=0.0, width=None, cursor_zoom=False,
-           cursor_set=None):
+           cursor_set=None, accent="#ff7a45", caption_size=0.04, caption_bold=False,
+           intro=None, outro=None):
     vid = polish.probe(src)
     Sw, Sh, sfps = vid["w"], vid["h"], vid["fps"]
     o2s, s2o, out_dur = time_maps(segs) if segs else (lambda t: t, lambda t: t, vid["dur"])
@@ -580,6 +659,11 @@ def render(src, regions, out_path, *, aspect="16:9", fit="cover", events=None, f
         frame_bg = bd
     blur_radius = max(1, int(round(0.04 * Tw)))   # ~0.04*width, scales with resolution
 
+    accent_rgb = hex_rgb(accent)
+    intro_img = render_card(intro, Tw, Th, accent_rgb) if intro else None
+    outro_img = render_card(outro, Tw, Th, accent_rgb) if outro else None
+    lead = card_dur(intro)                      # output seconds added before the demo
+
     # regions: convert source-time spans to OUTPUT-time, clamp centers
     R = []
     for r in regions:
@@ -618,7 +702,7 @@ def render(src, regions, out_path, *, aspect="16:9", fit="cover", events=None, f
         if clickfx: clicks = [(t, x, y) for t, x, y in ev["clicks"]]
         if ev.get("captions"):
             callouts += caption_callouts(ev["captions"], s2o, out_dur,
-                                         anchor="top" if keys else "bottom")
+                                         anchor="top" if keys else "bottom", size=caption_size)
         if keys:   # keystroke caption = ONE bottom-center window per burst whose text grows
             callouts += [{"t0": s2o(g["t0"]), "t1": s2o(g["t1"]), "anchor": "bottom", "size": 0.055,
                           "steps": [(s2o(st), tx) for st, tx in g["steps"]]}
@@ -637,7 +721,7 @@ def render(src, regions, out_path, *, aspect="16:9", fit="cover", events=None, f
     raw_path = vid_target + ".rgb24.raw"
     raw_f = open(raw_path, "wb")
     frame_bytes = Sw*Sh*3
-    cur_src_idx = -1; cur_frame = None
+    cur_src_idx = -1; cur_frame = None; last_img = None
     try:
         for i in range(nframes):
             if progress_file and i % 4 == 0:                 # real progress for the UI ring
@@ -739,16 +823,23 @@ def render(src, regions, out_path, *, aspect="16:9", fit="cover", events=None, f
                         text = c.get("text", "")
                     if not text: continue
                     cpx = max(12, int(c.get("size", 0.036) * Th))
-                    W, H, font, bb, padx, pady = _callout_measure(text, cpx)
+                    typed = bool(c.get("steps"))
+                    W, H, font, bb, padx, pady = _callout_measure(text, cpx, caption_bold and not typed,
+                                                                  markup=not typed)
                     cx0, cy0 = _callout_pos(c.get("anchor", "bottom"), W, H, Tw, Th, int(0.045*Th))
                     if fr is None: fr = np.asarray(img if img.mode == "RGB" else img.convert("RGB"))
                     sub = fr[cy0:cy0+H, cx0:cx0+W]
                     lum = float(sub.mean()) if sub.size else 128.0
-                    co = _callout_render(text, lum, font, bb, padx, pady, W, H)
+                    co = _callout_render(text, lum, font, bb, padx, pady, W, H, accent_rgb,
+                                         markup=not typed)
                     if fade < 1.0:
                         co.putalpha(co.split()[3].point(lambda v: int(v * fade)))
                     img.paste(co, (cx0, cy0), co)
-            raw_f.write(img.tobytes())
+            if i == 0 and intro_img is not None:
+                write_card(raw_f, intro_img, img, lead, fps, into=True)
+            raw_f.write(img.tobytes()); last_img = img
+        if outro_img is not None and last_img is not None:
+            write_card(raw_f, outro_img, last_img, card_dur(outro), fps, into=False)
     finally:
         try: raw_f.close()
         except Exception: pass
@@ -763,7 +854,7 @@ def render(src, regions, out_path, *, aspect="16:9", fit="cover", events=None, f
     # click sounds: place the real recorded click sample at each click (output time), mux
     if tmp_v and clicks:
         import wave
-        sr = 44100; n = int(out_dur*sr) + sr//2; a = np.zeros(n, np.float32)
+        sr = 44100; n = int((out_dur + lead + card_dur(outro))*sr) + sr//2; a = np.zeros(n, np.float32)
         cw_path = os.path.join(ROOT, "assets", "click.wav")
         if os.path.exists(cw_path):
             with wave.open(cw_path,"rb") as w:
@@ -775,7 +866,7 @@ def render(src, regions, out_path, *, aspect="16:9", fit="cover", events=None, f
                                      np.arange(len(samp)), samp)
             samp *= 0.8
             for ct, _, _ in clicks:
-                i = int(s2o(ct)*sr)
+                i = int((s2o(ct) + lead)*sr)
                 if 0 <= i < n:
                     seg = samp[:min(len(samp), n-i)]; a[i:i+len(seg)] += seg
         else:   # --clickfx asked for click sounds but the sample is missing (bug D)
@@ -788,11 +879,15 @@ def render(src, regions, out_path, *, aspect="16:9", fit="cover", events=None, f
         subprocess.run(["ffmpeg","-y","-v","error","-i",tmp_v,"-i",wav,"-c:v","copy",
                         "-c:a","aac","-b:a","160k","-shortest",out_path], check=True)
         os.remove(tmp_v); os.remove(wav)
-    result = {"w": Tw, "h": Th, "fps": fps, "frames": nframes, "dur": round(out_dur, 2)}
+    total = out_dur + lead + card_dur(outro)
+    result = {"w": Tw, "h": Th, "fps": fps, "frames": int(round(total * fps)), "dur": round(total, 2)}
     if metadata:
         moments = _build_moments(R, regions, Sw=Sw, Sh=Sh, fps=fps, out_dur=out_dur)
+        for m in moments:                        # cards push the demo later in the file
+            m["t"] = round(m["t"] + lead, 3); m["frame"] = int(round(m["t"] * fps))
+            if "in" in m: m["in"] = round(m["in"] + lead, 3); m["out"] = round(m["out"] + lead, 3)
         result["moments_file"] = _bake_metadata(out_path, moments, src=src, fps=fps,
-                                                Sw=Sw, Sh=Sh, Tw=Tw, Th=Th, out_dur=out_dur)
+                                                Sw=Sw, Sh=Sh, Tw=Tw, Th=Th, out_dur=total)
         result["moments"] = moments
     return result
 
@@ -882,6 +977,14 @@ if __name__ == "__main__":
     ap.add_argument("--pad", type=float, default=0.06)
     ap.add_argument("--radius", type=float, default=18); ap.add_argument("--no-shadow", action="store_true")
     ap.add_argument("--callouts", help="JSON [{t0,t1,text,anchor,size}] of screen-fixed text labels (OUTPUT time); anchor e.g. top-left/top/bottom-right/center")
+    ap.add_argument("--accent", default="#ff7a45",
+                    help="colour for *starred* runs in captions and card titles")
+    ap.add_argument("--caption-size", type=float, default=0.04,
+                    help="caption text height as a fraction of the output height (0.05+ reads well on social)")
+    ap.add_argument("--caption-bold", action="store_true", help="bold captions")
+    ap.add_argument("--intro", metavar="JSON",
+                    help='title card before the demo: {"title","subtitle","url","icon","dur","bg","fg"} (JSON or file)')
+    ap.add_argument("--outro", metavar="JSON", help="title card after the demo; same keys as --intro")
     ap.add_argument("--progress-file")
     ap.add_argument("--trim-in", type=float, default=0.0, help="source clip in-point (seconds); demo starts here")
     ap.add_argument("--trim-out", type=float, default=0.0, help="source clip out-point (seconds; 0 = source end); demo ends here")
@@ -914,6 +1017,9 @@ if __name__ == "__main__":
         ap.error("--bg-image replaces --bg; pass one of them")
     if a.bg_image and not os.path.isfile(a.bg_image):
         ap.error(f"--bg-image: no such file: {a.bg_image}")
+    def card_arg(v):
+        return (json.load(open(v)) if os.path.exists(v) else json.loads(v)) if v else None
+    intro, outro = card_arg(a.intro), card_arg(a.outro)
     spring = None
     if a.cursor_spring:
         try:
@@ -927,5 +1033,6 @@ if __name__ == "__main__":
                metadata=not a.no_metadata, cursor_scale=a.cursor_scale, click_press=a.click_press,
                cursor_idle_fade=a.cursor_idle_fade, cursor_spring=spring,
                bg_image=a.bg_image, bg_blur=a.bg_blur, width=a.width, cursor_zoom=a.cursor_zoom,
-               cursor_set=a.cursor_set)
+               cursor_set=a.cursor_set, accent=a.accent, caption_size=a.caption_size,
+               caption_bold=a.caption_bold, intro=intro, outro=outro)
     print(json.dumps(r))

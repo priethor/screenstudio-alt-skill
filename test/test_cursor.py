@@ -322,6 +322,35 @@ def test_render_width_sets_the_output_size():
                           capture_output=True, text=True, check=True).stdout.strip()
     assert size == "1920,1080", size
 
+def test_accent_spans_split_on_stars():
+    assert render.accent_spans("Spot something odd? *Ask why*") == [("Spot something odd? ", False), ("Ask why", True)]
+    assert render.accent_spans("No markup") == [("No markup", False)]
+    assert render.plain_text("Cortext *0.4*") == "Cortext 0.4"
+
+def test_cards_add_their_length_and_show_the_card():
+    import subprocess
+    from PIL import Image
+    tmp = tempfile.mkdtemp()
+    src = os.path.join(tmp, "src.mp4"); out = os.path.join(tmp, "out.mp4")
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "color=black:s=640x360:d=1:r=10",
+                    "-pix_fmt", "yuv420p", src], check=True)
+    card = {"title": "Cortext *0.4*", "subtitle": "Lock, archive, trash", "url": "cortext.digital",
+            "dur": 1.0, "bg": "#ffffff"}
+    r = render.render(src, [], out, fps=10, intro=card, outro=card, metadata=False)
+    assert abs(r["dur"] - 3.0) < 0.05, r
+    def mean(t):
+        png = os.path.join(tmp, f"c{t}.png")
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", str(t), "-i", out, "-frames:v", "1", png], check=True)
+        return float(np.asarray(Image.open(png).convert("L")).mean())
+    assert mean(0.1) > 200 and mean(1.5) < 30 and mean(2.9) > 200   # card, demo, card
+
+def test_accent_paints_the_starred_run():
+    from PIL import Image
+    W, H, font, bb, padx, pady = render._callout_measure("ab *cd*", 40, True)
+    img = render._callout_render("ab *cd*", 255, font, bb, padx, pady, W, H, (255, 0, 0))
+    px = np.asarray(img.convert("RGB")).reshape(-1, 3)
+    assert ((px[:, 0] > 200) & (px[:, 1] < 80)).sum() > 20                # red text present
+
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
 
 if __name__ == "__main__":
