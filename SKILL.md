@@ -102,7 +102,10 @@ Slow enough to follow one idea at a time.
   time only at the ends (`--trim-in`/`--trim-out`) or by keeping the script tight.
 - One action per step, then hold ~1-1.5 s on the result before the next move.
 - Moderate zoom, hand-written regions at ~1.4-1.8x on the area being changed (auto-zoom tends
-  to land at 2.6x and on sidebar clicks). Pull back out between unrelated steps.
+  to land at 2.6x and on sidebar clicks), less for large surfaces. Pull back out between
+  unrelated steps.
+- End on the wide shot. Once the camera pulls out to show the result (the page that opened,
+  the list that changed), stay there; zooming back in for the last seconds reads as a twitch.
 - `--keys` only when the typed text matters (a formula, a name the viewer must read).
 - A short caption per step when the action alone doesn't explain itself ("The sum can't run
   on text anymore"), written as a `caption` event at the step (see below). A few words,
@@ -144,8 +147,9 @@ Options that work with either mode, for a clip that goes out with a release or o
 change the finish, not the pacing: a release highlight is still a highlight.
 
 - **Full bleed.** Leave out `--wallpaper`, `--bg`, `--pad` and `--radius`: the recording fills
-  the frame edge to edge, no window on a backdrop. Keep the camera closer than usual (~2-2.5x)
-  and pan between areas with `cx1`/`cy1` instead of pulling back out between steps.
+  the frame edge to edge, no window on a backdrop. Size the zoom to what's being shown: small
+  targets (a menu, a button, a badge) take ~1.6-2x, while large surfaces (a modal, the command
+  palette, a whole panel) need ~1.1-1.2x or none. A zoom that crops a big surface only hides it.
 - **Chapter captions.** One caption per section, held for the whole section (`dur` on the
   caption event), large and bold: `--caption-size 0.05 --caption-bold`. Wrap the second half
   in stars to paint it in the accent colour: `Done with it? *Archive it*`. `--accent` sets the
