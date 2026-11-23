@@ -186,21 +186,44 @@ What made the difference in practice:
   element's center, pauses briefly, logs `down` with its `bbox`, runs the action and logs
   `up`; `rest(ms)` holds so loading stays visible. Log each `move` *after*
   `page.mouse.move`, so the cursor type read for it is the one under the pointer.
+- **Only `travel` moves the pointer.** Never call Playwright's `hover()`, `click()` or any
+  locator action that moves the mouse: it teleports the real pointer, so hover states,
+  tooltips and row actions show up while the drawn cursor is still on its way, and the
+  video reads as keyboard navigation with a fake mouse. Hover by travelling to the element
+  and resting; click with `page.mouse.down()`/`up()` where `travel` left the pointer.
+- **Drive `travel` by the wall clock.** Compute each step's position from the time elapsed
+  since the move started, and read the cursor type at most every ~120 ms. Awaiting a
+  `page.evaluate` on every step stretches the move and makes it stutter.
+- **Sync the clocks.** Right before the demo starts, cover the page with a black `div` for
+  ~400 ms and log the time. The first black frame in the video gives the offset between
+  the recording and `events.jsonl`; shift every event by it (about 0.1 s in practice).
+- **Every step shows its result.** An action with no visible effect (typing into a
+  read-only page to "prove" it's locked) looks like a glitch. Show the evidence instead:
+  a badge, its tooltip, a notice. Open a menu, rest, then travel to the item; wait for the
+  state the next click depends on (the document loaded, the notice shown), not a fixed time.
 - **Cursor type.** Resolve it with `page.evaluate` + `document.elementFromPoint`, and descend
   into same-origin iframes (editor canvases live in one) by subtracting the iframe's rect.
   `auto` means the browser decides: report `text` over inputs, textareas and
   contenteditable, `default` elsewhere. Read it again ~120 ms after each click, so a menu or
   popover opening under the pointer updates the type.
 - **Seed through the API, not the UI.** Create the data the demo needs before recording
-  starts, so the video opens on the interesting state.
+  starts, so the video opens on the interesting state. Write presentable content: sample
+  data written for tests reads badly on screen. For an "it's gone from search" beat, pick a
+  term that appears nowhere else in the data. Change seeded records through the same API;
+  rewriting content from the outside (`wp post update --post_content`) can drop structure
+  the app adds, and `wp post meta delete ID --all` deletes every meta key, not one.
+- **External assets.** A sandboxed browser may not reach CDNs (emoji images, avatars), so
+  they render broken. Route those URLs through a small cache filled with `curl`.
 - **Mark the start.** Write the time the first real frame is ready (after the page settles)
   and pass it as `--trim-in`.
 - **Regions use recording time.** Read click times from `events.jsonl` and write regions
   around each group of clicks. Merge groups less than ~2 s apart into one region; zooming
   out and back in between them reads as a jolt.
-- **Review.** Before showing it, pull 4-8 frames at the key moments into a contact sheet
-  and check framing, cursor type and captions. Stills don't show motion, so still ask for
-  the video-model critique below; when no video model is available, say it was skipped.
+- **Review the motion, not just stills.** A contact sheet checks framing and captions only.
+  For every click, also pull 8 frames from 0.8 s before to 0.6 s after, cropped around the
+  target, and check the order: the cursor arrives, then the hover state, then the click,
+  then the change. Then ask for the video-model critique below; when no video model is
+  available, say it was skipped and that the motion check was frame-based.
 - **Clean up.** The spec, its artifacts and any test environment started for it are
   throwaway; remove them once the video is rendered.
 
